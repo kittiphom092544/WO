@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>ใบเสนอราคา → ใบเปิดงาน</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap');
+
+  :root{
+    --ink:#1c2b23;
+    --paper:#fffdf8;
+    --line:#d8d2c2;
+    --cpf-green:#0f4c3a;
+    --cpf-green-dark:#0a352a;
+    --accent:#c98a2c;
+    --panel:#f4f1e8;
+    --danger:#a4392b;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:'Sarabun',sans-serif;
+    color:var(--ink);
+    background:var(--panel);
+    min-height:100vh;
+  }
+  .topbar{
+    background:var(--cpf-green);
+    color:#fdf9ee;
+    padding:18px 28px;
+    display:flex;
+    align-items:baseline;
+    gap:14px;
+    border-bottom:3px solid var(--accent);
+  }
+  .topbar h1{
+    font-size:19px;
+    font-weight:700;
+    margin:0;
+    letter-spacing:.2px;
+  }
+  .topbar span{
+    font-size:13px;
+    color:#cfe3da;
+  }
+  .layout{
+    display:grid;
+    grid-template-columns:360px 1fr;
+    gap:0;
+    align-items:start;
+    min-height:calc(100vh - 62px);
+  }
+  @media (max-width:900px){
+    .layout{grid-template-columns:1fr;}
+  }
+
+  /* LEFT PANEL */
+  .left{
+    padding:24px;
+    border-right:1px solid var(--line);
+    position:sticky;
+    top:0;
+  }
+  .dropzone{
+    border:2px dashed #9fae9f;
+    border-radius:6px;
+    background:#fbfaf4;
+    padding:28px 16px;
+    text-align:center;
+    cursor:pointer;
+    transition:border-color .15s, background .15s;
+  }
+  .dropzone.drag{
+    border-color:var(--cpf-green);
+    background:#eef4ee;
+  }
+  .dropzone .icon{font-size:30px;display:block;margin-bottom:8px;}
+  .dropzone p{margin:4px 0;font-size:14px;color:#4b564d;}
+  .dropzone .sub{font-size:12px;color:#8b8f83;}
+  input[type=file]{display:none;}
+
+  .status{
+    margin-top:14px;
+    font-size:13px;
+    padding:10px 12px;
+    border-radius:5px;
+    display:none;
+    line-height:1.5;
+  }
+  .status.show{display:block;}
+  .status.ok{background:#e9f3ea;color:#215035;border:1px solid #b9d8bf;}
+  .status.warn{background:#fbf1de;color:#7a531a;border:1px solid #eccf98;}
+  .status.err{background:#f9e6e3;color:var(--danger);border:1px solid #edb9b0;}
+
+  .fieldset{
+    margin-top:20px;
+    border-top:1px solid var(--line);
+    padding-top:16px;
+  }
+  .fieldset h3{
+    font-size:13px;
+    text-transform:uppercase;
+    letter-spacing:.5px;
+    color:#6c7568;
+    margin:0 0 10px;
+    font-weight:600;
+  }
+  .field{margin-bottom:10px;}
+  .field label{
+    display:block;
+    font-size:12.5px;
+    color:#555;
+    margin-bottom:3px;
+  }
+  .field input, .field select{
+    width:100%;
+    padding:7px 9px;
+    font-family:inherit;
+    font-size:13.5px;
+    border:1px solid #c7c2b1;
+    border-radius:4px;
+    background:#fff;
+  }
+  .field input:focus, .field select:focus{
+    outline:2px solid var(--cpf-green);
+    outline-offset:0;
+  }
+  .hint{
+    font-size:11.5px;
+    color:#8b8f83;
+    margin-top:3px;
+  }
+  .items-editor{
+    margin-top:6px;
+    border:1px solid var(--line);
+    border-radius:5px;
+    overflow:hidden;
+  }
+  .items-editor table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  .items-editor th{
+    background:#eee9d9;
+    text-align:left;
+    padding:6px 6px;
+    font-weight:600;
+    font-size:11px;
+  }
+  .items-editor td{padding:4px 5px;border-top:1px solid var(--line);}
+  .items-editor input{
+    width:100%;
+    border:1px solid transparent;
+    background:transparent;
+    padding:3px 4px;
+    font-size:12.5px;
+    font-family:inherit;
+    border-radius:3px;
+  }
+  .items-editor input:focus{border-color:var(--cpf-green);background:#fff;outline:none;}
+  .items-editor .rm{
+    cursor:pointer;
+    color:var(--danger);
+    font-size:15px;
+    text-align:center;
+    user-select:none;
+  }
+  .row-buttons{display:flex;gap:8px;margin-top:10px;}
+  button{
+    font-family:inherit;
+    cursor:pointer;
+    border:none;
+    border-radius:5px;
+    font-size:13px;
+    padding:8px 14px;
+  }
+  .btn-ghost{background:#fff;border:1px solid #c7c2b1;color:#3a4238;}
+  .btn-ghost:hover{background:#f2efe4;}
+  .btn-primary{background:var(--cpf-green);color:#fff;}
+  .btn-primary:hover{background:var(--cpf-green-dark);}
+  .print-btn{
+    width:100%;
+    margin-top:22px;
+    padding:11px;
+    font-size:14.5px;
+    font-weight:600;
+    background:var(--accent);
+    color:#31220a;
+  }
+  .print-btn:hover{filter:brightness(0.95);}
+
+  /* RIGHT PANEL — the rendered document */
+  .right{
+    padding:36px 40px;
+    display:flex;
+    justify-content:center;
+  }
+  .doc{
+    width:800px;
+    max-width:100%;
+    background:var(--paper);
+    box-shadow:0 2px 14px rgba(20,30,20,.12);
+    padding:38px 46px 30px;
+    font-size:13.5px;
+    line-height:1.55;
+  }
+  .doc-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    border-bottom:2px solid var(--cpf-green);
+    padding-bottom:14px;
+    margin-bottom:16px;
+  }
+  .doc-head .co{
+    max-width:60%;
+  }
+  .doc-head .co .name{font-weight:700;font-size:14.5px;color:var(--cpf-green-dark);}
+  .doc-head .co div{color:#444;font-size:12.5px;}
+  .doc-title{
+    text-align:right;
+  }
+  .doc-title .big{
+    font-size:22px;
+    font-weight:700;
+    color:var(--cpf-green-dark);
+    letter-spacing:.5px;
+  }
+  .meta-grid{
+    display:grid;
+    grid-template-columns:auto 1fr;
+    gap:2px 8px;
+    font-size:12.5px;
+    margin-top:8px;
+  }
+  .meta-grid .k{color:#666;text-align:right;}
+  .meta-grid .v{font-weight:600;color:var(--ink);}
+  .meta-grid .v.empty{color:#b3ada0;font-weight:400;font-style:italic;}
+
+  .req-box{
+    margin:18px 0 20px;
+    padding:14px 16px;
+    background:#f6f4ea;
+    border-left:4px solid var(--cpf-green);
+    border-radius:3px;
+  }
+  .req-box .label{
+    font-weight:700;
+    margin-bottom:8px;
+    color:var(--cpf-green-dark);
+    font-size:13px;
+  }
+  .req-row{display:flex;gap:6px;margin-bottom:3px;font-size:13px;}
+  .req-row .k{color:#555;min-width:118px;flex-shrink:0;}
+  .req-row .v{font-weight:600;}
+
+  table.items{
+    width:100%;
+    border-collapse:collapse;
+    margin-top:6px;
+    font-size:12.8px;
+  }
+  table.items thead th{
+    background:var(--cpf-green);
+    color:#fff;
+    padding:7px 6px;
+    font-weight:600;
+    font-size:12px;
+    text-align:center;
+  }
+  table.items td{
+    border:1px solid var(--line);
+    padding:6px 7px;
+    vertical-align:top;
+  }
+  table.items td.num{text-align:right;font-variant-numeric:tabular-nums;}
+  table.items td.center{text-align:center;}
+  table.items tr.plant-row td{
+    background:#efece0;
+    font-weight:600;
+    font-size:12.5px;
+  }
+  table.items tfoot td{
+    border:1px solid var(--line);
+    padding:7px;
+    font-weight:700;
+  }
+  .empty-row td{color:#b3ada0;font-style:italic;text-align:center;}
+
+  .note-row{
+    display:flex;
+    justify-content:space-between;
+    margin-top:14px;
+    font-size:12px;
+    color:#555;
+    gap:20px;
+  }
+  .sign-area{
+    display:grid;
+    grid-template-columns:1fr 1fr 1fr;
+    gap:18px;
+    margin-top:46px;
+    text-align:center;
+    font-size:12px;
+  }
+  .sign-area .line{
+    border-top:1px solid #999;
+    margin-top:36px;
+    padding-top:6px;
+    color:#555;
+  }
+  .warn-banner{
+    background:#fbf1de;
+    border:1px solid #eccf98;
+    color:#7a531a;
+    padding:8px 12px;
+    font-size:12px;
+    border-radius:4px;
+    margin-bottom:14px;
+  }
+
+  @media print{
+    body{background:#fff;}
+    .left, .topbar{display:none;}
+    .right{padding:0;}
+    .doc{box-shadow:none;width:100%;padding:10px 20px;}
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>ใบเสนอราคา → ใบเปิดงาน</h1>
+  <span>ลากไฟล์ PDF ใบเสนอราคา (TVT-xxxxxx) แล้วระบบจะกรอกฟอร์มให้อัตโนมัติ</span>
+</div>
+
+<div class="layout">
+
+  <!-- ============ LEFT ============ -->
+  <div class="left">
+    <div class="dropzone" id="dropzone">
+      <span class="icon">📄</span>
+      <p><strong>ลากไฟล์ PDF มาวางที่นี่</strong></p>
+      <p class="sub">หรือคลิกเพื่อเลือกไฟล์ — รองรับใบเสนอราคา (มีข้อความ ไม่ใช่ไฟล์สแกน)</p>
+      <input type="file" id="fileInput" accept="application/pdf">
+    </div>
+
+    <div class="status" id="status"></div>
+
+    <div class="fieldset">
+      <h3>โรงงาน / ผู้เปิดงาน</h3>
+      <div class="field">
+        <label>ตรวจพบโรงงาน (แก้ไขได้ถ้าไม่ตรง)</label>
+        <select id="factorySelect"></select>
+        <div class="hint" id="factoryHint"></div>
+      </div>
+    </div>
+
+    <div class="fieldset">
+      <h3>ข้อมูลใบเปิดงาน</h3>
+      <div class="field">
+        <label>วันที่ออกใบเปิดงาน</label>
+        <input type="date" id="jobDate">
+      </div>
+      <div class="field">
+        <label>เลขที่ใบเปิดงาน (กรอกเอง ถ้ามี)</label>
+        <input type="text" id="jobNo" placeholder="เช่น JO-2026-XXXX">
+      </div>
+      <div class="field">
+        <label>เลขที่งบประมาณทรัพย์สิน (กรอกเอง ถ้ามี)</label>
+        <input type="text" id="budgetNo" placeholder="ไม่บังคับ">
+      </div>
+      <div class="field">
+        <label>อ้างอิงเอกสาร (STO / IO / เลขที่ใบเสนอราคา)</label>
+        <input type="text" id="refDoc" placeholder="ดึงจาก PDF อัตโนมัติ แก้ไขได้">
+      </div>
+    </div>
+
+    <div class="fieldset">
+      <h3>รายการสินค้า/บริการ</h3>
+      <div class="items-editor">
+        <table>
+          <thead>
+            <tr><th style="width:26%">รหัส</th><th>รายละเอียด</th><th style="width:14%">หน่วย</th><th style="width:12%">จำนวน</th><th style="width:16%">ราคา/หน่วย</th><th style="width:16px"></th></tr>
+          </thead>
+          <tbody id="itemsBody"></tbody>
+        </table>
+      </div>
+      <div class="row-buttons">
+        <button class="btn-ghost" id="addRow">+ เพิ่มแถว</button>
+        <button class="btn-ghost" id="clearRows">ล้างรายการ</button>
+      </div>
+    </div>
+
+    <button class="print-btn" id="printBtn">🖨️ พิมพ์ / บันทึกเป็น PDF</button>
+  </div>
+
+  <!-- ============ RIGHT — rendered form ============ -->
+  <div class="right">
+    <div class="doc" id="doc">
+
+      <div class="doc-head">
+        <div class="co">
+          <div class="name">บริษัท ซีพีเอฟ (ประเทศไทย) จำกัด (มหาชน)</div>
+          <div>3 อาคาร ซี.พี.ทาวเวอร์ 2 ชั้น 11 ถนนรัชดาภิเษก แขวงดินแดง เขตดินแดง</div>
+          <div>จังหวัดกรุงเทพมหานคร รหัสไปรษณีย์ 10400</div>
+        </div>
+        <div class="doc-title">
+          <div class="big">ใบเปิดงาน</div>
+          <div class="meta-grid">
+            <div class="k">วันที่ออกใบเปิดงาน</div><div class="v" id="outDate">—</div>
+            <div class="k">เลขที่ใบเปิดงาน</div><div class="v" id="outJobNo">—</div>
+            <div class="k">เลขที่งบประมาณทรัพย์สิน</div><div class="v" id="outBudget">—</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="req-box">
+        <div class="label">ผู้เปิดงาน / เจ้าของโครงการ [BU]</div>
+        <div class="req-row"><span class="k">ชื่อ - นามสกุล:</span><span class="v" id="outName">—</span></div>
+        <div class="req-row"><span class="k">บริษัท/BU/หน่วยงาน:</span><span class="v" id="outCompany">—</span></div>
+        <div class="req-row"><span class="k">ตำแหน่ง:</span><span class="v" id="outPosition">—</span></div>
+        <div class="req-row"><span class="k">โทรศัพท์:</span><span class="v" id="outPhone">—</span></div>
+        <div class="req-row"><span class="k">E-mail:</span><span class="v" id="outEmail">—</span></div>
+      </div>
+
+      <table class="items">
+        <thead>
+          <tr>
+            <th style="width:9%">เลขที่รายการ</th>
+            <th>รายละเอียดสินค้า/บริการ</th>
+            <th style="width:10%">หน่วย</th>
+            <th style="width:10%">จำนวน</th>
+            <th style="width:16%">จำนวนเงิน</th>
+          </tr>
+        </thead>
+        <tbody id="outItems">
+          <tr class="empty-row"><td colspan="5">ยังไม่มีรายการ — วาง PDF ทางซ้ายเพื่อเริ่ม</td></tr>
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="3">รวมจำนวนงานทั้งสิ้น</td>
+            <td class="num" id="outCount">0</td>
+            <td></td>
+          </tr>
+          <tr>
+            <td colspan="4">รวมจำนวนเงินทั้งสิ้น</td>
+            <td class="num" id="outTotal">0.00</td>
+          </tr>
+        </tfoot>
+      </table>
+
+      <div class="note-row">
+        <div>หมายเหตุ: จำนวนเงินรวมมีวัตถุประสงค์เพื่อใช้ในการประเมินมูลค่างานเท่านั้น</div>
+      </div>
+
+      <div class="sign-area">
+        <div><div class="line">ผู้เปิดงาน</div></div>
+        <div><div class="line">ผู้ตรวจสอบ</div></div>
+        <div><div class="line">ผู้อนุมัติ</div></div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+// ---------- Factory master data (from the combined "ใบเปิดงาน" workbook) ----------
+const FACTORIES = [
+  {key:"ศรีราชา",   sheet:"SRF", name:"คุณ สรายุทธ สมประยูร",   company:"บริษัท ซีพีเอฟ (ประเทศไทย)จำกัด(มหาชน) 242/4 ม.10 ถ.สุขุมวิท ต.บางพระ อ.ศรีราชา จ.ชลบุรี 20110", position:"ผู้ช่วยผู้อำนวยการ (AVP)", phone:"084-2577712", email:"sarayut.s@cpf.co.th"},
+  {key:"พิษณุโลก",  sheet:"PLF", name:"คุณสมศักดิ์ รักศักดิ์สยาม", company:"บริษัท ซีพีเอฟ (ประเทศไทย)จำกัด(มหาชน) 178 ม.4 ถ.พิษณุโลก-หล่มสัก กม.9 ต.สมอแข อ.เมือง จ.พิษณุโลก 65000", position:"ผู้ช่วยผู้อำนวยการ (AVP)", phone:"064-4942549", email:"somsak_rak@cpf.co.th"},
+  {key:"ขอนแก่น",   sheet:"KKF", name:"คุณ อรรถกร ดูงาม",       company:"บริษัท ซีพีเอฟ (ประเทศไทย)จำกัด(มหาชน) 555 ม.8 ต.ท่าพระ อ.เมืองขอนแก่น จ.ขอนแก่น 40260", position:"ผู้ช่วยผู้อำนวยการ (AVP)", phone:"086-3342383", email:"attakorn.d@cpf.co.th"},
+  {key:"ราชบุรี",   sheet:"RBF", name:"คุณ ธีระพงษ์ กล้าตระกูล", company:"บริษัท ซีพีเอฟ (ประเทศไทย)จำกัด(มหาชน) 80/3 ม.8 ถ.เพชรเกษม ต.ดอนกระเบื้อง อ.บ้านโป่ง จ.ราชบุรี", position:"ผู้ช่วยผู้อำนวยการ (AVP)", phone:"081-2044583", email:"teerapong.k@cpf.co.th"},
+  {key:"โคกกรวด",   sheet:"KRF", name:"คุณ ปรีดิ์ อภิชัยปกรณ์",  company:"บริษัท ซีพีเอฟ (ประเทศไทย)จำกัด(มหาชน) 86 ม.6 ถ.มิตรภาพ ต.โคกกรวด อ.เมืองนครราชสีมา จ.นครราชสีมา 30280", position:"ผู้ช่วยผู้อำนวยการ (AVP)", phone:"089-3555-953", email:"pree.api@cpf.co.th"},
+  {key:"บางนา",     sheet:"BKF", name:"คุณไชยา ใจบำรุง",       company:"บริษัท ซีพีเอฟ (ประเทศไทย)จำกัด(มหาชน) 57 ม.1 ถ.บางนา-ตราด ต.ศีรษะจรเข้ใหญ่ อ.บางเสาธง จ.สมุทรปราการ 10540", position:"ผู้ช่วยผู้อำนวยการ (AVP)", phone:"083-9111055", email:"chaiya_j@cpf.co.th"},
+  {key:"กบินทร์บุรี", sheet:"KBF", name:"คุณ ฐปนัตร์ วรกุล",     company:"บริษัท ซีพีเอฟ (ประเทศไทย)จำกัด(มหาชน) 439 ม.1 ต.ลาดตะเคียน อ.กบินทร์บุรี จ.ปราจีนบุรี 25110", position:"ผู้ช่วยผู้อำนวยการ (AVP)", phone:"081-9006410", email:"tapanut.w@cpf.co.th"},
+  {key:"ลำพูน",     sheet:"LPF", name:"คุณ นิติกร เสรีขจรจารุ", company:"บริษัท ซีพีเอฟ (ประเทศไทย)จำกัด(มหาชน) 89 ถ.ลำปาง-เชียงใหม่ ต.เวียงยอง อ.เมือง จ.ลำพูน 51000", position:"ผู้ช่วยผู้อำนวยการ (AVP)", phone:"086-3975181", email:"Nitikorn.S@cpf.co.th"},
+  {key:"ศรีสะเกษ",  sheet:"SKF", name:"คุณกฤษฎา แสงสุวรรณ",   company:"บริษัท ซีพีเอฟ (ประเทศไทย)จำกัด(มหาชน) 168 หมู่ 4 ต.โนนค้อ อ.โนนคูณ จ.ศรีสะเกษ 33250", position:"ผู้ช่วยผู้อำนวยการ (AVP)", phone:"083-7855870", email:"krisada.s@cpf.co.th"},
+  {key:"ธารเกษม",   sheet:"TKF", name:"คุณเชาวรินทร์ อิทธิญาโณ", company:"บริษัท ซีพีเอฟ (ประเทศไทย)จำกัด(มหาชน) 61/2 ม.2 ถ.สายตรี ต.ธารเกษม อ.พระพุทธบาท จ.สระบุรี 18120", position:"ผู้ช่วยผู้อำนวยการ (AVP)", phone:"088-953-5446", email:"chao-warin.i@cpf.co.th"},
+  {key:"ปักธงชัย",  sheet:"PTF", name:"คุณวรวิทย์ เลิศวิเศษ",   company:"บริษัท ซีพีเอฟ (ประเทศไทย)จำกัด(มหาชน) 250 หมู่ที่ 6 ถ.สี่คิ้ว-โชคชัย ต.ตะคุ อ.ปักธงชัย จ.นครราชสีมา 30150", position:"", phone:"095-6135517", email:"worawit_l@cpf.co.th"},
+  {key:"ท่าเรือ",   sheet:"TRF", name:"คุณ จิระ คงเขียว",       company:"บริษัท ซีพีเอฟ (ประเทศไทย)จำกัด(มหาชน) 63 ม.7 ต.จำปา อ.ท่าเรือ จ.พระนครศรีอยุธยา 13130", position:"ผู้ช่วยผู้อำนวยการ (AVP)", phone:"097-2421685", email:"jira@cpf.co.th"},
+  {key:"หนองแค",    sheet:"BPF", name:"คุณ วิชานนท์ บุญประเสริฐ", company:"บริษัท ซีพีเอฟ (ประเทศไทย)จำกัด(มหาชน) 57 ม.5 ถ.พหลโยธิน ต.หนองไข่น้ำ อ.หนองแค จ.สระบุรี 18140", position:"ผู้ช่วยผู้อำนวยการ (AVP)", phone:"062-9196241", email:"vichanon.b@cpf.co.th"},
+  {key:"หาดใหญ่",   sheet:"HYF", name:"คุณไชยรัตน์ รัตนอุดม",   company:"บริษัท ซีพีเอฟ (ประเทศไทย)จำกัด(มหาชน) 73 ม.8 ถ.กาญจนวานิช ต.น้ำน้อย อ.หาดใหญ่ จ.สงขลา 90110", position:"ผู้ช่วยผู้อำนวยการ (AVP)", phone:"089-1313059", email:"chairat_rat@cpf.co.th"},
+];
+
+const factorySelect = document.getElementById("factorySelect");
+const custom = {key:"__custom__", sheet:"-", name:"", company:"", position:"", phone:"", email:""};
+[...FACTORIES, {...custom}].forEach((f,i)=>{
+  const opt = document.createElement("option");
+  opt.value = i;
+  opt.textContent = f.key==="__custom__" ? "— ไม่พบ / กรอกเอง —" : `${f.key}  (${f.sheet})`;
+  factorySelect.appendChild(opt);
+});
+let allFactoryOptions = [...FACTORIES, custom];
+
+let state = {
+  factoryIdx: null,
+  items: [],
+  jobDate: new Date().toISOString().slice(0,10),
+  jobNo: "",
+  budgetNo: "",
+  refDoc: ""
+};
+
+function thb(n){
+  return (isNaN(n)?0:n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function thaiDate(iso){
+  if(!iso) return "—";
+  const months = ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+  const d = new Date(iso+"T00:00:00");
+  if(isNaN(d)) return iso;
+  return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()+543}`;
+}
+
+// ---------- PDF parsing ----------
+async function parsePdf(file){
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data:buf}).promise;
+  let fullLines = [];
+  for(let p=1;p<=pdf.numPages;p++){
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    // group items into lines by rounded y
+    const buckets = {};
+    content.items.forEach(it=>{
+      const y = Math.round(it.transform[5]);
+      if(!buckets[y]) buckets[y] = [];
+      buckets[y].push(it);
+    });
+    const ys = Object.keys(buckets).map(Number).sort((a,b)=>b-a);
+    ys.forEach(y=>{
+      const line = buckets[y].sort((a,b)=>a.transform[4]-b.transform[4]).map(it=>it.str).join(" ");
+      if(line.trim()) fullLines.push(line.trim());
+    });
+  }
+  return fullLines;
+}
+
+function extractFromLines(lines){
+  const text = lines.join("\n");
+  const result = {plant:null, refNo:null, date:null, items:[]};
+
+  const refMatch = text.match(/เลขที่ใบเสนอราคา[:\s]*([A-Za-z0-9\-\/]+)/);
+  if(refMatch) result.refNo = refMatch[1];
+
+  const dateMatch = text.match(/วันที่ออกใบเสนอราคา[:\s]*([0-9]{1,2}[-\/][A-Za-z0-9]{2,4}[-\/][0-9]{2,4})/);
+  if(dateMatch) result.date = dateMatch[1];
+
+  const plantMatch = text.match(/โรงงาน[ก-๙A-Za-z]{2,40}/);
+  if(plantMatch) result.plant = plantMatch[0];
+
+  // item lines: no. code description price qty amount
+  const itemRe = /(?:^|\n)\s*\d+\s+(\d{5,9})\s+(.+?)\s+([\d,]+\.\d{2})\s+(\d+)\s+([\d,]+\.\d{2})(?=\n|$)/g;
+  let m;
+  while((m = itemRe.exec(text)) !== null){
+    result.items.push({
+      code: m[1],
+      desc: m[2].trim(),
+      unitPrice: parseFloat(m[3].replace(/,/g,"")),
+      qty: parseInt(m[4],10),
+      unit: "PC"
+    });
+  }
+  return result;
+}
+
+function matchFactory(plantText){
+  if(!plantText) return null;
+  const idx = FACTORIES.findIndex(f => plantText.includes(f.key));
+  return idx === -1 ? null : idx;
+}
+
+// ---------- UI: items editor ----------
+const itemsBody = document.getElementById("itemsBody");
+function renderItemsEditor(){
+  itemsBody.innerHTML = "";
+  state.items.forEach((it, i)=>{
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><input data-i="${i}" data-f="code" value="${it.code||""}"></td>
+      <td><input data-i="${i}" data-f="desc" value="${it.desc||""}"></td>
+      <td><input data-i="${i}" data-f="unit" value="${it.unit||"PC"}"></td>
+      <td><input data-i="${i}" data-f="qty" type="number" value="${it.qty||0}"></td>
+      <td><input data-i="${i}" data-f="unitPrice" type="number" step="0.01" value="${it.unitPrice||0}"></td>
+      <td class="rm" data-i="${i}">✕</td>
+    `;
+    itemsBody.appendChild(tr);
+  });
+  itemsBody.querySelectorAll("input").forEach(inp=>{
+    inp.addEventListener("input", e=>{
+      const i = +e.target.dataset.i, f = e.target.dataset.f;
+      let v = e.target.value;
+      if(f==="qty") v = parseInt(v||"0",10);
+      if(f==="unitPrice") v = parseFloat(v||"0");
+      state.items[i][f] = v;
+      renderDoc();
+    });
+  });
+  itemsBody.querySelectorAll(".rm").forEach(el=>{
+    el.addEventListener("click", e=>{
+      state.items.splice(+e.target.dataset.i,1);
+      renderItemsEditor();
+      renderDoc();
+    });
+  });
+}
+
+document.getElementById("addRow").addEventListener("click", ()=>{
+  state.items.push({code:"",desc:"",unit:"PC",qty:1,unitPrice:0});
+  renderItemsEditor();
+  renderDoc();
+});
+document.getElementById("clearRows").addEventListener("click", ()=>{
+  state.items = [];
+  renderItemsEditor();
+  renderDoc();
+});
+
+// ---------- UI: doc render ----------
+function renderDoc(){
+  const f = (state.factoryIdx!==null) ? allFactoryOptions[state.factoryIdx] : custom;
+  document.getElementById("outDate").textContent = thaiDate(state.jobDate);
+  document.getElementById("outDate").className = "v" + (state.jobDate?"":" empty");
+  document.getElementById("outJobNo").textContent = state.jobNo || "(ระบุภายหลัง)";
+  document.getElementById("outJobNo").className = "v" + (state.jobNo?"":" empty");
+  document.getElementById("outBudget").textContent = state.budgetNo || "(ระบุภายหลัง)";
+  document.getElementById("outBudget").className = "v" + (state.budgetNo?"":" empty");
+
+  document.getElementById("outName").textContent = f.name || "—";
+  document.getElementById("outCompany").textContent = f.company || "—";
+  document.getElementById("outPosition").textContent = f.position || "—";
+  document.getElementById("outPhone").textContent = f.phone || "—";
+  document.getElementById("outEmail").textContent = f.email || "—";
+
+  const tbody = document.getElementById("outItems");
+  tbody.innerHTML = "";
+  if(state.refDoc || f.key){
+    const plantRow = document.createElement("tr");
+    plantRow.className = "plant-row";
+    const label = (f.key && f.key!=="__custom__") ? `โรงงานอาหารสัตว์บก${f.key}` : "";
+    const refPart = state.refDoc ? ` ( ${state.refDoc} )` : "";
+    plantRow.innerHTML = `<td colspan="5">${label}${refPart}</td>`;
+    tbody.appendChild(plantRow);
+  }
+  if(state.items.length===0){
+    tbody.innerHTML += `<tr class="empty-row"><td colspan="5">ยังไม่มีรายการ — วาง PDF ทางซ้ายเพื่อเริ่ม</td></tr>`;
+  } else {
+    state.items.forEach((it,i)=>{
+      const amount = (it.qty||0) * (it.unitPrice||0);
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td class="center">${i+1}</td>
+        <td>${it.code?it.code+" — ":""}${it.desc||""}</td>
+        <td class="center">${it.unit||"PC"}</td>
+        <td class="num">${it.qty||0}</td>
+        <td class="num">${thb(amount)}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+  const total = state.items.reduce((s,it)=> s + (it.qty||0)*(it.unitPrice||0), 0);
+  document.getElementById("outCount").textContent = state.items.length;
+  document.getElementById("outTotal").textContent = thb(total);
+}
+
+factorySelect.addEventListener("change", e=>{
+  state.factoryIdx = +e.target.value;
+  renderDoc();
+});
+document.getElementById("jobDate").addEventListener("input", e=>{ state.jobDate = e.target.value; renderDoc(); });
+document.getElementById("jobNo").addEventListener("input", e=>{ state.jobNo = e.target.value; renderDoc(); });
+document.getElementById("budgetNo").addEventListener("input", e=>{ state.budgetNo = e.target.value; renderDoc(); });
+document.getElementById("refDoc").addEventListener("input", e=>{ state.refDoc = e.target.value; renderDoc(); });
+document.getElementById("printBtn").addEventListener("click", ()=> window.print());
+document.getElementById("jobDate").value = state.jobDate;
+
+// ---------- Drop zone ----------
+const dropzone = document.getElementById("dropzone");
+const fileInput = document.getElementById("fileInput");
+const statusEl = document.getElementById("status");
+
+function showStatus(msg, kind){
+  statusEl.textContent = msg;
+  statusEl.className = "status show " + kind;
+}
+
+dropzone.addEventListener("click", ()=> fileInput.click());
+["dragenter","dragover"].forEach(ev=>{
+  dropzone.addEventListener(ev, e=>{ e.preventDefault(); dropzone.classList.add("drag"); });
+});
+["dragleave","drop"].forEach(ev=>{
+  dropzone.addEventListener(ev, e=>{ e.preventDefault(); dropzone.classList.remove("drag"); });
+});
+dropzone.addEventListener("drop", e=>{
+  const file = e.dataTransfer.files[0];
+  if(file) handleFile(file);
+});
+fileInput.addEventListener("change", e=>{
+  const file = e.target.files[0];
+  if(file) handleFile(file);
+});
+
+async function handleFile(file){
+  if(file.type !== "application/pdf"){
+    showStatus("ไฟล์นี้ไม่ใช่ PDF กรุณาเลือกไฟล์ .pdf", "err");
+    return;
+  }
+  showStatus("กำลังอ่านไฟล์ PDF ...", "warn");
+  try{
+    const lines = await parsePdf(file);
+    if(lines.join("").trim().length === 0){
+      showStatus("อ่านข้อความจาก PDF นี้ไม่ได้ — ไฟล์นี้น่าจะเป็นภาพสแกน (ไม่มีชั้นข้อความ) กรุณาใช้ไฟล์ใบเสนอราคาแบบดิจิทัล หรือกรอกข้อมูลด้วยตนเองทางซ้าย", "err");
+      return;
+    }
+    const extracted = extractFromLines(lines);
+    if(extracted.items.length === 0){
+      showStatus("อ่านไฟล์ได้ แต่ไม่พบรูปแบบตารางรายการสินค้าที่รู้จัก กรุณาตรวจสอบ/กรอกรายการด้วยตนเองทางซ้าย", "warn");
+    }
+
+    // apply
+    state.items = extracted.items.map(it=>({code:it.code, desc:it.desc, unit:it.unit, qty:it.qty, unitPrice:it.unitPrice}));
+    state.refDoc = extracted.refNo ? `เลขที่ใบเสนอราคา ${extracted.refNo}` : "";
+    document.getElementById("refDoc").value = state.refDoc;
+
+    const idx = matchFactory(extracted.plant);
+    if(idx !== null){
+      state.factoryIdx = idx;
+      factorySelect.value = idx;
+      document.getElementById("factoryHint").textContent = `พบข้อความ: "${extracted.plant}"`;
+    } else {
+      state.factoryIdx = allFactoryOptions.length - 1;
+      factorySelect.value = state.factoryIdx;
+      document.getElementById("factoryHint").textContent = extracted.plant
+        ? `พบ "${extracted.plant}" แต่จับคู่โรงงานไม่ได้ — กรุณาเลือกเอง`
+        : `ไม่พบชื่อโรงงานในไฟล์ — กรุณาเลือกเอง`;
+    }
+
+    renderItemsEditor();
+    renderDoc();
+
+    if(idx !== null && extracted.items.length > 0){
+      showStatus(`สำเร็จ: พบ ${extracted.items.length} รายการ และจับคู่โรงงาน "${FACTORIES[idx].key}" ให้แล้ว ✓`, "ok");
+    } else {
+      showStatus("อ่านไฟล์เสร็จแล้ว กรุณาตรวจสอบข้อมูลทางขวาอีกครั้งก่อนใช้งาน", "warn");
+    }
+  } catch(err){
+    console.error(err);
+    showStatus("เกิดข้อผิดพลาดขณะอ่านไฟล์ PDF: " + err.message, "err");
+  }
+}
+
+renderItemsEditor();
+renderDoc();
+</script>
+</body>
+</html>
