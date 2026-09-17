@@ -194,13 +194,18 @@
     display:flex;
     justify-content:center;
   }
+  /* ตัวอักษรของเอกสารที่พิมพ์/แสดงผล ต้องตรงกับไฟล์ต้นฉบับ "ใบเปิดงาน.xlsx" เป๊ะๆ:
+     เนื้อหาทั้งหมดใช้ Browallia New, หัวเรื่อง "ใบเปิดงาน" ใช้ FreesiaUPC
+     (ฟอนต์เหล่านี้เป็นฟอนต์ระบบของ Windows/Office ไทย จะแสดงผลตรงเป๊ะบนเครื่องที่มีฟอนต์ติดตั้งอยู่
+     ส่วนเครื่องที่ไม่มีฟอนต์นี้จะ fallback ไปฟอนต์ไทยใกล้เคียงถัดไปในลิสต์) */
   .doc{
     width:800px;
     max-width:100%;
     background:#fff;
     box-shadow:0 2px 14px rgba(20,30,20,.12);
     padding:26px 30px 24px;
-    font-size:13.5px;
+    font-family:'Browallia New','Browallia UPC','Angsana New','TH SarabunPSK',sans-serif;
+    font-size:18.6px; /* ~14pt ตามต้นฉบับ */
     line-height:1.5;
     color:#000;
   }
@@ -224,6 +229,7 @@
   .doc-title-box{
     background:#5b9bd5;
     color:#fff;
+    font-family:'FreesiaUPC','Angsana New','TH SarabunPSK',serif;
     font-weight:700;
     font-size:30px;
     padding:10px 22px;
@@ -285,7 +291,7 @@
   table.items tr.plant-row td{
     background:#fff;
     font-weight:700;
-    font-size:13.5px;
+    font-size:24px; /* 18pt ตามต้นฉบับ (C21) */
     border:none;
   }
   table.items tfoot td{
@@ -350,7 +356,7 @@
       <span class="icon">📄</span>
       <p><strong>ลากไฟล์ PDF มาวางที่นี่</strong></p>
       <p class="sub">หรือคลิกเพื่อเลือกไฟล์ — รองรับใบเสนอราคา (มีข้อความ ไม่ใช่ไฟล์สแกน)</p>
-      <input type="file" id="fileInput" accept="application/pdf">
+      <input type="file" id="fileInput" accept=".pdf,application/pdf">
     </div>
 
     <div class="status" id="status"></div>
@@ -942,7 +948,13 @@ fileInput.addEventListener("change", e=>{
 });
 
 async function handleFile(file){
-  if(file.type !== "application/pdf"){
+  // ตรวจสอบว่าเป็นไฟล์ PDF โดยดูทั้ง MIME type และนามสกุลไฟล์
+  // เพราะบางระบบ/บางแอป (เช่นไฟล์จาก Google Drive, บางแอปจัดการไฟล์)
+  // จะไม่ส่ง MIME type "application/pdf" มาให้ถูกต้อง ทำให้เช็คแบบเดิม
+  // (เช็คแค่ file.type) ปฏิเสธไฟล์ PDF ที่ถูกต้องอยู่แล้ว
+  const looksLikePdfType = file.type === "application/pdf" || file.type === "application/x-pdf";
+  const looksLikePdfExt = /\.pdf$/i.test(file.name || "");
+  if(!looksLikePdfType && !looksLikePdfExt){
     showStatus("ไฟล์นี้ไม่ใช่ PDF กรุณาเลือกไฟล์ .pdf", "err");
     return;
   }
