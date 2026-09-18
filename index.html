@@ -759,6 +759,21 @@ function applyMatcode(it, autofillPrice){
   }
 }
 
+// ตรวจจับข้อความ "เพี้ยน" อันเป็นผลจากปัญหา font/encoding ของไฟล์ PDF ต้นฉบับ
+// (ไม่ใช่แค่การเว้นวรรคผิดที่ แต่เป็นตัวอักษรผิดตัวไปเลย — พบบ่อยเมื่อไฟล์ที่ SAP
+// พิมพ์ออกมาใช้ฟอนต์ที่ไม่มีตาราง ToUnicode ที่ถูกต้อง ซึ่งแก้ในโค้ดฝั่งนี้ไม่ได้
+// เพราะข้อมูลตัวอักษรที่ถูกต้องหายไปตั้งแต่ตอนสร้าง PDF แล้ว)
+// จุดสังเกตที่ชัดที่สุด: มีตัวอักษรละติน-ยุโรปตะวันออก (เช่น ŕ ş ő ż) ปนอยู่ใน
+// คำอธิบายที่ควรเป็นไทย/อังกฤษล้วน — ตัวอักษรกลุ่มนี้ไม่มีทางเกิดขึ้นเองตามธรรมชาติ
+function looksGarbled(desc){
+  if(!desc) return false;
+  // Latin-1 Supplement + Latin Extended-A ranges ที่ไม่ใช่ปกติ (กันตัวสามัญ เช่น ° ผ่าน)
+  if(/[\u00C0-\u017F]/.test(desc)) return true;
+  // สระ/วรรณยุกต์ไทยที่ลอยเดี่ยว ๆ โดยไม่มีพยัญชนะไทยนำหน้าติดกัน (ตามด้วยช่องว่างหรือขึ้นต้นคำ)
+  if(/(^|\s)[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E]/.test(desc)) return true;
+  return false;
+}
+
 function renderItemsEditor(){
   itemsBody.innerHTML = "";
   state.items.forEach((it, i)=>{
@@ -766,15 +781,23 @@ function renderItemsEditor(){
     const hasRef = it.matcodePrice != null;
     const diff = hasRef && Math.abs((it.unitPrice||0) - it.matcodePrice) > 0.005;
     const noPrice = !it.unitPrice;
+    const garbled = looksGarbled(it.desc);
     tr.innerHTML = `
       <td><input data-i="${i}" data-f="code" value="${it.code||""}"></td>
-      <td><input data-i="${i}" data-f="desc" value="${it.desc||""}"></td>
+      <td><input data-i="${i}" data-f="desc" value="${it.desc||""}" style="${garbled? 'background:#fdecea;border-color:#e0aca4;':''}" title="${garbled? 'ข้อความนี้อาจเพี้ยนจากปัญหาฟอนต์ในไฟล์ PDF ต้นฉบับ — กรุณาตรวจสอบ/แก้ไขด้วยมือ':''}"></td>
       <td><input data-i="${i}" data-f="unit" value="${it.unit||"PC"}"></td>
       <td><input data-i="${i}" data-f="qty" type="number" value="${it.qty||0}"></td>
       <td><input data-i="${i}" data-f="unitPrice" type="number" step="0.01" value="${it.unitPrice||0}" style="${noPrice? 'background:#fbeceb;border-color:#e0aca4;':''}"></td>
       <td class="rm" data-i="${i}">✕</td>
     `;
     itemsBody.appendChild(tr);
+    if(garbled){
+      const warn = document.createElement("tr");
+      warn.innerHTML = `<td></td><td colspan="5" style="padding:0 5px 5px;">
+        <span style="font-size:11px;color:#a4392b;">⚠️ ข้อความนี้น่าจะเพี้ยนจากฟอนต์ในไฟล์ PDF ต้นฉบับ (ไม่ใช่บั๊กของระบบนี้) — กรุณาพิมพ์แก้ตรงนี้ด้วยมือ</span>
+      </td>`;
+      itemsBody.appendChild(warn);
+    }
     if(hasRef){
       const hint = document.createElement("tr");
       hint.innerHTML = `<td></td><td colspan="5" style="padding:0 5px 5px;">
@@ -1137,6 +1160,10 @@ async function handleFile(file){
     const missingNote = missingGuess > 0
       ? ` ⚠️ เจอบรรทัดที่หน้าตาเหมือนรายการสินค้าในไฟล์ประมาณ ${extracted.expectedItemCount} รายการ แต่ดึงออกมาได้ครบเงื่อนไขแค่ ${extracted.items.length} รายการ — อาจมี ${missingGuess} รายการตกหล่น กรุณาเทียบกับไฟล์ต้นฉบับ แล้ววางข้อความรายการที่หายด้วยกล่อง "วางข้อความเอง" ทางซ้าย`
       : "";
+    const garbledCount = state.items.filter(it=>looksGarbled(it.desc)).length;
+    const garbledNote = garbledCount > 0
+      ? ` ⚠️ พบ ${garbledCount} รายการที่คำอธิบายน่าจะเพี้ยนจากปัญหาฟอนต์ในไฟล์ PDF ต้นฉบับ (ช่องสีแดงในตารางซ้าย) — จุดนี้เกิดตั้งแต่ตอนสร้างไฟล์ PDF แก้ในระบบนี้ไม่ได้ กรุณาพิมพ์แก้เองตามรายการที่ไฮไลต์`
+      : "";
     if(idx !== null && extracted.items.length > 0){
       let refNote = "";
       if(extracted.docType === "sto"){
@@ -1145,9 +1172,9 @@ async function handleFile(file){
       } else if(matcodeHits>0){
         refNote = ` (พบราคาอ้างอิงในฐาน Matcode ${matcodeHits}/${extracted.items.length} รายการ — ดูช่องสีใต้แต่ละแถว)`;
       }
-      showStatus(`สำเร็จ: พบ ${extracted.items.length} รายการ และจับคู่โรงงาน "${FACTORIES[idx].key}" ให้แล้ว ✓${refNote}${missingNote}`, missingGuess>0?"warn":"ok");
+      showStatus(`สำเร็จ: พบ ${extracted.items.length} รายการ และจับคู่โรงงาน "${FACTORIES[idx].key}" ให้แล้ว ✓${refNote}${missingNote}${garbledNote}`, (missingGuess>0||garbledCount>0)?"warn":"ok");
     } else {
-      showStatus(`อ่านไฟล์เสร็จแล้ว กรุณาตรวจสอบข้อมูลทางขวาอีกครั้งก่อนใช้งาน${missingNote}`, "warn");
+      showStatus(`อ่านไฟล์เสร็จแล้ว กรุณาตรวจสอบข้อมูลทางขวาอีกครั้งก่อนใช้งาน${missingNote}${garbledNote}`, "warn");
     }
   } catch(err){
     console.error(err);
