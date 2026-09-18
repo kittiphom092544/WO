@@ -194,18 +194,13 @@
     display:flex;
     justify-content:center;
   }
-  /* ตัวอักษรของเอกสารที่พิมพ์/แสดงผล ต้องตรงกับไฟล์ต้นฉบับ "ใบเปิดงาน.xlsx" เป๊ะๆ:
-     เนื้อหาทั้งหมดใช้ Browallia New, หัวเรื่อง "ใบเปิดงาน" ใช้ FreesiaUPC
-     (ฟอนต์เหล่านี้เป็นฟอนต์ระบบของ Windows/Office ไทย จะแสดงผลตรงเป๊ะบนเครื่องที่มีฟอนต์ติดตั้งอยู่
-     ส่วนเครื่องที่ไม่มีฟอนต์นี้จะ fallback ไปฟอนต์ไทยใกล้เคียงถัดไปในลิสต์) */
   .doc{
     width:800px;
     max-width:100%;
     background:#fff;
     box-shadow:0 2px 14px rgba(20,30,20,.12);
     padding:26px 30px 24px;
-    font-family:'Browallia New','Browallia UPC','Angsana New','TH SarabunPSK',sans-serif;
-    font-size:18.6px; /* ~14pt ตามต้นฉบับ */
+    font-size:13.5px;
     line-height:1.5;
     color:#000;
   }
@@ -229,7 +224,6 @@
   .doc-title-box{
     background:#5b9bd5;
     color:#fff;
-    font-family:'FreesiaUPC','Angsana New','TH SarabunPSK',serif;
     font-weight:700;
     font-size:30px;
     padding:10px 22px;
@@ -291,7 +285,7 @@
   table.items tr.plant-row td{
     background:#fff;
     font-weight:700;
-    font-size:24px; /* 18pt ตามต้นฉบับ (C21) */
+    font-size:13.5px;
     border:none;
   }
   table.items tfoot td{
@@ -356,7 +350,7 @@
       <span class="icon">📄</span>
       <p><strong>ลากไฟล์ PDF มาวางที่นี่</strong></p>
       <p class="sub">หรือคลิกเพื่อเลือกไฟล์ — รองรับใบเสนอราคา (มีข้อความ ไม่ใช่ไฟล์สแกน)</p>
-      <input type="file" id="fileInput" accept=".pdf,application/pdf">
+      <input type="file" id="fileInput" accept="application/pdf">
     </div>
 
     <div class="status" id="status"></div>
@@ -506,8 +500,6 @@
 </div>
 
 <script>
-pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-
 // ---------- Factory master data (from the combined "ใบเปิดงาน" workbook) ----------
 const FACTORIES = [
   {key:"ศรีราชา",   sheet:"SRF", name:"คุณ สรายุทธ สมประยูร",   company:"บริษัท ซีพีเอฟ (ประเทศไทย)จำกัด(มหาชน) 242/4 ม.10 ถ.สุขุมวิท ต.บางพระ อ.ศรีราชา จ.ชลบุรี 20110", position:"ผู้ช่วยผู้อำนวยการ (AVP)", phone:"084-2577712", email:"sarayut.s@cpf.co.th"},
@@ -567,7 +559,21 @@ function thaiDate(iso){
 }
 
 // ---------- PDF parsing ----------
+// pdf.js's worker URL is set lazily on first real use, not at top-level —
+// if the pdf.js <script> tag itself fails to load (network policy, ad
+// blocker, slow connection), touching `pdfjsLib` at parse time throws
+// immediately and silently kills every listener registered later in this
+// file (drag-drop, click-to-browse, buttons — all of it). Guarding it here
+// means a failed CDN load only breaks PDF parsing, not the whole page.
+let _pdfjsWorkerReady = false;
 async function parsePdf(file){
+  if(typeof pdfjsLib === "undefined"){
+    throw new Error("ไม่สามารถโหลดไลบรารีอ่าน PDF ได้ (เช็คการเชื่อมต่ออินเทอร์เน็ต หรือลองปิด ad blocker แล้วรีเฟรชหน้าใหม่)");
+  }
+  if(!_pdfjsWorkerReady){
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    _pdfjsWorkerReady = true;
+  }
   const buf = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({data:buf}).promise;
   let fullLines = [];
@@ -831,7 +837,19 @@ document.getElementById("jobDate").value = state.jobDate;
 // ---------- Excel (.xlsx) export — fills the REAL template file, so the
 // output keeps the exact original look (logos, colors, merged cells) since
 // it literally IS that file with cells filled in, not a recreation. ----------
-const XLSX_TEMPLATES = JSON.parse(document.getElementById("xlsx-templates-data").textContent);
+// NOTE: loaded lazily (not at top-level) because the <script type="application/json">
+// data block sits later in the HTML — reading it eagerly here would throw
+// before this point in the page even finishes parsing, which silently kills
+// every event listener registered further down the script (drag-drop AND
+// the click-to-browse handler included).
+let _xlsxTemplatesCache = null;
+function getXlsxTemplates(){
+  if(!_xlsxTemplatesCache){
+    const el = document.getElementById("xlsx-templates-data");
+    _xlsxTemplatesCache = JSON.parse(el.textContent);
+  }
+  return _xlsxTemplatesCache;
+}
 
 function b64ToArrayBuffer(b64){
   const bin = atob(b64);
@@ -841,6 +859,7 @@ function b64ToArrayBuffer(b64){
 }
 
 async function downloadExcel(){
+  const XLSX_TEMPLATES = getXlsxTemplates();
   const excelHint = document.getElementById("excelHint");
   const f = (state.factoryIdx!==null) ? allFactoryOptions[state.factoryIdx] : custom;
   const sheetCode = f.sheet;
@@ -948,13 +967,7 @@ fileInput.addEventListener("change", e=>{
 });
 
 async function handleFile(file){
-  // ตรวจสอบว่าเป็นไฟล์ PDF โดยดูทั้ง MIME type และนามสกุลไฟล์
-  // เพราะบางระบบ/บางแอป (เช่นไฟล์จาก Google Drive, บางแอปจัดการไฟล์)
-  // จะไม่ส่ง MIME type "application/pdf" มาให้ถูกต้อง ทำให้เช็คแบบเดิม
-  // (เช็คแค่ file.type) ปฏิเสธไฟล์ PDF ที่ถูกต้องอยู่แล้ว
-  const looksLikePdfType = file.type === "application/pdf" || file.type === "application/x-pdf";
-  const looksLikePdfExt = /\.pdf$/i.test(file.name || "");
-  if(!looksLikePdfType && !looksLikePdfExt){
+  if(file.type !== "application/pdf"){
     showStatus("ไฟล์นี้ไม่ใช่ PDF กรุณาเลือกไฟล์ .pdf", "err");
     return;
   }
