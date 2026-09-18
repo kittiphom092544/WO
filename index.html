@@ -600,16 +600,50 @@ async function parsePdf(file){
   for(let p=1;p<=pdf.numPages;p++){
     const page = await pdf.getPage(p);
     const content = await page.getTextContent();
-    // group items into lines by rounded y
-    const buckets = {};
-    content.items.forEach(it=>{
-      const y = Math.round(it.transform[5]);
-      if(!buckets[y]) buckets[y] = [];
-      buckets[y].push(it);
+
+    // --- Group glyphs into visual lines -----------------------------------
+    // Thai vowel/tone marks (สระ-วรรณยุกต์) are drawn as separate PDF text
+    // runs stacked on the SAME baseline as their base consonant, but SAP's
+    // PDF export sometimes emits them with a y that's a fraction of a point
+    // off from the rest of the line. The old code grouped lines by
+    // Math.round(y), so a mark landing on e.g. 341.6 vs 341.4 could fall
+    // into a different bucket than the word it belongs to — that stray
+    // bucket then got emitted as its own "line" and, once re-merged by the
+    // item-row regex, showed up as a garbled character in the wrong place
+    // (this is what produced "เหลี่ยม" -> "เหลี É ยม" above).
+    // Fix: cluster by proximity instead of exact rounding.
+    const items = content.items.filter(it => it.str !== undefined);
+    items.sort((a,b) => b.transform[5] - a.transform[5]);
+    const Y_TOL = 2.2; // pt — glyphs within this band count as the same line
+    const lineClusters = [];
+    items.forEach(it=>{
+      const y = it.transform[5];
+      let cluster = lineClusters.find(c => Math.abs(c.y - y) <= Y_TOL);
+      if(!cluster){ cluster = {y, items:[]}; lineClusters.push(cluster); }
+      cluster.items.push(it);
     });
-    const ys = Object.keys(buckets).map(Number).sort((a,b)=>b-a);
-    ys.forEach(y=>{
-      const line = buckets[y].sort((a,b)=>a.transform[4]-b.transform[4]).map(it=>it.str).join(" ");
+
+    // --- Turn each cluster into text, spacing by real horizontal gaps -----
+    // Joining every glyph with a hard space (the old behaviour) breaks
+    // Thai words apart whenever SAP emits one text-showing op per glyph.
+    // Instead, only insert a space where there's an actual gap on the page
+    // (a real word boundary), based on glyph width vs. distance to the
+    // next glyph.
+    lineClusters.forEach(cluster=>{
+      cluster.items.sort((a,b)=> a.transform[4] - b.transform[4]);
+      let line = "";
+      let prevEndX = null;
+      cluster.items.forEach(it=>{
+        const x = it.transform[4];
+        const w = it.width || 0;
+        if(prevEndX !== null){
+          const gap = x - prevEndX;
+          const spaceThreshold = Math.max(1.5, (it.height || 8) * 0.28);
+          if(gap > spaceThreshold) line += " ";
+        }
+        line += it.str;
+        prevEndX = x + w;
+      });
       if(line.trim()) fullLines.push(line.trim());
     });
   }
@@ -619,6 +653,10 @@ async function parsePdf(file){
 function extractFromLines(lines){
   const text = lines.join("\n");
   const result = {plant:null, refNo:null, date:null, items:[], fullText:text, docType:null};
+
+  // นับคร่าว ๆ ว่ามีกี่แถวที่ "หน้าตาเหมือน" เป็นบรรทัดเริ่มรายการ (ลำดับ + รหัสวัสดุ)
+  // ไว้เทียบกับจำนวนที่ regex จับได้จริงในภายหลัง เพื่อเตือนถ้ามีรายการหลุด
+  result.expectedItemCount = lines.filter(l => /^\d{2,3}\s+\d{5,9}\b/.test(l.trim())).length;
 
   // ---- Try "ใบเสนอราคา" (quotation) style header first ----
   const quoteRefMatch = text.match(/เลขที่ใบเสนอราคา[:\s]*([A-Za-z0-9\-\/]+)/);
@@ -1095,6 +1133,10 @@ async function handleFile(file){
     renderDoc();
 
     const matcodeHits = state.items.filter(it=>it.matcodePrice != null).length;
+    const missingGuess = Math.max(0, extracted.expectedItemCount - extracted.items.length);
+    const missingNote = missingGuess > 0
+      ? ` ⚠️ เจอบรรทัดที่หน้าตาเหมือนรายการสินค้าในไฟล์ประมาณ ${extracted.expectedItemCount} รายการ แต่ดึงออกมาได้ครบเงื่อนไขแค่ ${extracted.items.length} รายการ — อาจมี ${missingGuess} รายการตกหล่น กรุณาเทียบกับไฟล์ต้นฉบับ แล้ววางข้อความรายการที่หายด้วยกล่อง "วางข้อความเอง" ทางซ้าย`
+      : "";
     if(idx !== null && extracted.items.length > 0){
       let refNote = "";
       if(extracted.docType === "sto"){
@@ -1103,9 +1145,9 @@ async function handleFile(file){
       } else if(matcodeHits>0){
         refNote = ` (พบราคาอ้างอิงในฐาน Matcode ${matcodeHits}/${extracted.items.length} รายการ — ดูช่องสีใต้แต่ละแถว)`;
       }
-      showStatus(`สำเร็จ: พบ ${extracted.items.length} รายการ และจับคู่โรงงาน "${FACTORIES[idx].key}" ให้แล้ว ✓${refNote}`, "ok");
+      showStatus(`สำเร็จ: พบ ${extracted.items.length} รายการ และจับคู่โรงงาน "${FACTORIES[idx].key}" ให้แล้ว ✓${refNote}${missingNote}`, missingGuess>0?"warn":"ok");
     } else {
-      showStatus("อ่านไฟล์เสร็จแล้ว กรุณาตรวจสอบข้อมูลทางขวาอีกครั้งก่อนใช้งาน", "warn");
+      showStatus(`อ่านไฟล์เสร็จแล้ว กรุณาตรวจสอบข้อมูลทางขวาอีกครั้งก่อนใช้งาน${missingNote}`, "warn");
     }
   } catch(err){
     console.error(err);
