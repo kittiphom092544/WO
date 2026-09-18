@@ -595,7 +595,17 @@ async function parsePdf(file){
     _pdfjsWorkerReady = true;
   }
   const buf = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({data:buf}).promise;
+  const pdf = await pdfjsLib.getDocument({
+    data: buf,
+    // จุดสำคัญที่พลาดไปก่อนหน้านี้: ถ้าฟอนต์ในไฟล์ PDF อ้างอิง CMap มาตรฐาน
+    // (พบได้บ่อยกับฟอนต์ไทย/CJK ที่ฝังมาแบบ CID-keyed) แต่เราไม่โหลดตาราง CMap
+    // ให้ pdf.js มันจะ "เดา" การแปลงรหัสตัวอักษร -> Unicode ผิด ทำให้ข้อความที่
+    // ดึงออกมาเพี้ยนไปเป็นอักษรอื่น (เช่น ห -> ท หรือหลุดไปเป็นอักษรละตินแปลก ๆ)
+    // ทั้งที่หน้าเอกสารแสดงผลถูกต้องปกติ เพราะการแสดงผลใช้รูปฟอนต์ตรง ๆ
+    // ไม่ผ่าน Unicode เลย — นี่คือสาเหตุที่พิมพ์/ดูไฟล์ปกติ แต่ดึงข้อความแล้วเพี้ยน
+    cMapUrl: "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/",
+    cMapPacked: true,
+  }).promise;
   let fullLines = [];
   for(let p=1;p<=pdf.numPages;p++){
     const page = await pdf.getPage(p);
