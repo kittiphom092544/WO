@@ -277,23 +277,32 @@
   table.items td{
     border:1px solid #fff;
     background:#d9d9d9;
-    padding:6px 7px;
-    vertical-align:top;
+    padding:4px 7px;
+    vertical-align:middle;
   }
+  table.items tr.alt td{background:#efefef;}
   table.items td.num{text-align:right;font-variant-numeric:tabular-nums;}
   table.items td.center{text-align:center;}
+  /* แถวหัวข้อโรงงาน / STO — พื้นเทา ตัวหนา ตามไฟล์ Excel */
   table.items tr.plant-row td{
-    background:#fff;
+    background:#d9d9d9;
     font-weight:700;
-    font-size:13.5px;
-    border:none;
+    font-size:12.8px;
+    border:1px solid #fff;
+    padding:4px 7px;
   }
   table.items tfoot td{
-    padding:7px;
+    padding:4px 7px;
     font-weight:700;
+    border:1px solid #fff;
   }
-  table.items tfoot td.label{background:#5b9bd5;color:#fff;text-align:right;padding-right:12px;}
-  table.items tfoot td.value{background:#5b9bd5;color:#fff;text-align:right;}
+  table.items tfoot td.spacer{background:transparent;border:none;}
+  table.items tfoot td.label{background:#5b9bd5;color:#fff;text-align:right;padding-right:10px;}
+  table.items tfoot td.value{background:#fff;color:#000;text-align:right;border:1px solid #bfbfbf;}
+  table.items tfoot td.note{
+    background:transparent;border:none;text-align:left;
+    font-weight:400;font-size:12px;color:#000;vertical-align:bottom;
+  }
   .empty-row td{color:#888;font-style:italic;text-align:center;background:#fff;border:1px dashed #ccc;}
 
   .note-row{
@@ -465,32 +474,30 @@
       <table class="items">
         <thead>
           <tr>
-            <th style="width:9%">เลขที่รายการ</th>
-            <th>รายละเอียดสินค้า/บริการ</th>
-            <th style="width:10%">หน่วย</th>
-            <th style="width:10%">จำนวน</th>
-            <th style="width:16%">จำนวนเงิน</th>
+            <th style="width:7%">เลขที่รายการ</th>
+            <th colspan="2">รายละเอียดสินค้า/บริการ</th>
+            <th style="width:13%">หน่วย</th>
+            <th style="width:9%">จำนวน</th>
+            <th style="width:14%">จำนวนเงิน</th>
           </tr>
         </thead>
         <tbody id="outItems">
-          <tr class="empty-row"><td colspan="5">ยังไม่มีรายการ — วาง PDF ทางซ้ายเพื่อเริ่ม</td></tr>
+          <tr class="empty-row"><td colspan="6">ยังไม่มีรายการ — วาง PDF ทางซ้ายเพื่อเริ่ม</td></tr>
         </tbody>
         <tfoot>
           <tr>
-            <td colspan="3" class="label">รวมจำนวนงานทั้งสิ้น</td>
+            <td class="note" rowspan="2" colspan="3">
+              <b>หมายเหตุ:</b> จำนวนเงินรวมมีวัตถุประสงค์เพื่อใช้ในการประเมินมูลค่างานเท่านั้น
+            </td>
+            <td class="label" colspan="2">รวมจำนวนงานทั้งสิ้น</td>
             <td class="num value" id="outCount">0</td>
-            <td class="value"></td>
           </tr>
           <tr>
-            <td colspan="4" class="label">รวมจำนวนเงินทั้งสิ้น</td>
+            <td class="label" colspan="2">รวมจำนวนเงินทั้งสิ้น</td>
             <td class="num value" id="outTotal">0.00</td>
           </tr>
         </tfoot>
       </table>
-
-      <div class="note-row">
-        <b>หมายเหตุ:</b> จำนวนเงินรวมมีวัตถุประสงค์เพื่อใช้ในการประเมินมูลค่างานเท่านั้น
-      </div>
 
       <div class="sign-area" id="signArea"></div>
 
@@ -643,6 +650,20 @@ function extractFromLines(lines){
   // (STO documents never carry a real price — it's always 0.00 there —
   // so these rows get flagged for a Matcode reference-price lookup afterwards.)
   if(result.items.length === 0){
+    // เก็บตำแหน่งของหัวข้อ PO/STO ทุกอันในเอกสาร เพื่อบอกได้ว่ารายการไหนอยู่ใต้ STO ใบไหน
+    // (ไฟล์เดียวมักมีหลาย STO และ Excel ต้นฉบับแยกเป็นกลุ่ม ๆ ตามนี้)
+    const blocks = [];
+    const blockRe = /PO\s+(\d{6,12})\s*\/\s*DATE\s+([\d.\/]+)/g;
+    let b;
+    while((b = blockRe.exec(text)) !== null){
+      blocks.push({pos:b.index, label:`STO : ${b[1]} / DATE ${b[2]}`});
+    }
+    const labelAt = (pos)=>{
+      let lab = result.refNo ? `STO : ${result.refNo}${result.date?` / DATE ${result.date}`:""}` : "";
+      for(const bl of blocks){ if(bl.pos <= pos) lab = bl.label; else break; }
+      return lab;
+    };
+
     const stoItemRe = /(?:^|\n)\s*\d{2,3}\s+(\d{5,9})\s+([A-Za-z]{2,6})\s+\d{1,2}\.\d{1,2}\.\d{4}\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})(?:\n([^\n]+))?/g;
     while((m = stoItemRe.exec(text)) !== null){
       result.items.push({
@@ -650,7 +671,8 @@ function extractFromLines(lines){
         unit: m[2],
         qty: parseInt(parseFloat(m[3].replace(/,/g,"")),10),
         unitPrice: parseFloat(m[4].replace(/,/g,"")),
-        desc: (m[6]||"").trim()
+        desc: (m[6]||"").trim(),
+        groupLabel: labelAt(m.index)
       });
     }
     if(result.items.length > 0) result.docType = result.docType || "sto";
@@ -782,28 +804,54 @@ function renderDoc(){
 
   const tbody = document.getElementById("outItems");
   tbody.innerHTML = "";
-  if(state.refDoc || f.key){
-    const plantRow = document.createElement("tr");
-    plantRow.className = "plant-row";
-    const label = (f.key && f.key!=="__custom__") ? `โรงงานอาหารสัตว์บก${f.key}` : "";
-    const refPart = state.refDoc ? ` ( ${state.refDoc} )` : "";
-    plantRow.innerHTML = `<td colspan="5">${label}${refPart}</td>`;
-    tbody.appendChild(plantRow);
-  }
+  const plantName = (f.key && f.key!=="__custom__") ? `โรงงานอาหารสัตว์บก${f.key}` : "";
+
   if(state.items.length===0){
-    tbody.innerHTML += `<tr class="empty-row"><td colspan="5">ยังไม่มีรายการ — วาง PDF ทางซ้ายเพื่อเริ่ม</td></tr>`;
+    // ยังไม่มีรายการ — โชว์หัวข้อโรงงานอย่างเดียว (ถ้ามี) แล้วบอกให้วาง PDF
+    if(plantName || state.refDoc){
+      const head = document.createElement("tr");
+      head.className = "plant-row";
+      head.innerHTML = `<td colspan="6">${plantName}${state.refDoc?` ( ${state.refDoc} )`:""}</td>`;
+      tbody.appendChild(head);
+    }
+    tbody.innerHTML += `<tr class="empty-row"><td colspan="6">ยังไม่มีรายการ — วาง PDF ทางซ้ายเพื่อเริ่ม</td></tr>`;
   } else {
-    state.items.forEach((it,i)=>{
-      const amount = (it.qty||0) * (it.unitPrice||0);
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td class="center">${i+1}</td>
-        <td>${it.code?it.code+" — ":""}${it.desc||""}</td>
-        <td class="center">${it.unit||"PC"}</td>
-        <td class="num">${it.qty||0}</td>
-        <td class="num">${thb(amount)}</td>
-      `;
-      tbody.appendChild(tr);
+    // จัดกลุ่มรายการตาม STO / DATE เหมือนในไฟล์ Excel
+    // แต่ละกลุ่มมีแถวหัวข้อสีเทา แล้วรันเลขที่รายการใหม่ 1,2,3... ในกลุ่มนั้น
+    const groups = [];
+    state.items.forEach(it=>{
+      const key = it.groupLabel || state.refDoc || "";
+      let g = groups.find(x=>x.key===key);
+      if(!g){ g = {key, items:[]}; groups.push(g); }
+      g.items.push(it);
+    });
+
+    groups.forEach(g=>{
+      if(plantName || g.key){
+        const head = document.createElement("tr");
+        head.className = "plant-row";
+        head.innerHTML = `
+          <td></td>
+          <td colspan="3">${plantName}${g.key?` ( ${g.key} )`:""}</td>
+          <td></td>
+          <td></td>
+        `;
+        tbody.appendChild(head);
+      }
+      g.items.forEach((it,i)=>{
+        const amount = (it.qty||0) * (it.unitPrice||0);
+        const tr = document.createElement("tr");
+        if(i % 2 === 1) tr.className = "alt";
+        tr.innerHTML = `
+          <td class="center">${i+1}</td>
+          <td class="center" style="width:16%">${it.code||""}</td>
+          <td>${it.desc||""}</td>
+          <td class="num">${it.unitPrice?thb(it.unitPrice):""}</td>
+          <td class="center">${it.qty||0}</td>
+          <td class="num">${amount?thb(amount):""}</td>
+        `;
+        tbody.appendChild(tr);
+      });
     });
   }
   const total = state.items.reduce((s,it)=> s + (it.qty||0)*(it.unitPrice||0), 0);
@@ -888,19 +936,42 @@ async function downloadExcel(){
 
     const plantLabel = (f.key && f.key!=="__custom__") ? `โรงงานอาหารสัตว์บก${f.key}` : "";
     const refPart = state.refDoc ? ` ( ${state.refDoc} )` : "";
-    sheet.cell("C21").value(`${plantLabel}${refPart}`);
+    // C21 คือแถวหัวข้อกลุ่มแรกในเทมเพลต — กลุ่มถัดไปจะแทรกเป็นแถวใหม่ในตาราง
 
     const maxRows = layout.item_end - layout.item_start + 1;
-    const itemsToWrite = state.items.slice(0, maxRows);
-    itemsToWrite.forEach((it, i)=>{
-      const r = layout.item_start + i;
-      const amount = (it.qty||0) * (it.unitPrice||0);
-      sheet.cell(`B${r}`).value(i+1);
-      sheet.cell(`C${r}`).value(it.code ? `${it.code} — ${it.desc||""}` : (it.desc||""));
-      sheet.cell(`H${r}`).value(it.unit||"PC");
-      sheet.cell(`I${r}`).value(it.qty||0);
-      sheet.cell(`J${r}`).value(amount);
+
+    // จัดกลุ่มตาม STO เหมือนที่แสดงบนหน้าจอ แล้วเขียนลงชีต
+    // แถวหัวข้อกลุ่มจะกินพื้นที่ 1 บรรทัดในโควตา maxRows ด้วย
+    const groups = [];
+    state.items.forEach(it=>{
+      const key = it.groupLabel || state.refDoc || "";
+      let g = groups.find(x=>x.key===key);
+      if(!g){ g = {key, items:[]}; groups.push(g); }
+      g.items.push(it);
     });
+
+    let r = layout.item_start;
+    let written = 0;
+    let first = true;
+    for(const g of groups){
+      if(r > layout.item_end) break;
+      const headText = `${plantLabel}${g.key?` ( ${g.key} )`:""}`;
+      if(first){ sheet.cell("C21").value(headText); first = false; }
+      else { sheet.cell(`C${r}`).value(headText); r++; }
+      for(let i=0;i<g.items.length;i++){
+        if(r > layout.item_end) break;
+        const it = g.items[i];
+        const amount = (it.qty||0) * (it.unitPrice||0);
+        sheet.cell(`B${r}`).value(i+1);
+        sheet.cell(`C${r}`).value(it.code || "");
+        sheet.cell(`D${r}`).value(it.desc || "");
+        sheet.cell(`H${r}`).value(it.unitPrice||0);
+        sheet.cell(`I${r}`).value(it.qty||0);
+        sheet.cell(`J${r}`).value(amount);
+        r++; written++;
+      }
+    }
+    const itemsToWrite = {length: written};
 
     // Recompute the totals ourselves so they're correct regardless of the
     // original template's summed range.
@@ -988,7 +1059,7 @@ async function handleFile(file){
     // quoted price and just attach the Matcode price for comparison.
     state.items = extracted.items.map(it=>{
       const noRealPrice = !it.unitPrice || it.unitPrice === 0;
-      const item = {code:it.code, desc:it.desc, unit:it.unit||"PC", qty:it.qty, unitPrice:it.unitPrice, priceSource: noRealPrice ? "matcode" : "quote"};
+      const item = {code:it.code, desc:it.desc, unit:it.unit||"PC", qty:it.qty, unitPrice:it.unitPrice, groupLabel: it.groupLabel||"", priceSource: noRealPrice ? "matcode" : "quote"};
       applyMatcode(item, noRealPrice);
       return item;
     });
