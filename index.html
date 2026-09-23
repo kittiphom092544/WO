@@ -415,6 +415,11 @@
       </div>
       <div class="field">
         <label>ช่อง 2 — ชื่อ / ตำแหน่ง <span style="color:#a4392b;">(ไม่ชัวร์ชื่อ)</span></label>
+        <select id="sig2preset" style="margin-bottom:4px;">
+          <option value="(พิพัฒน์ ทิ้งเชื้อ)">(พิพัฒน์ ทิ้งเชื้อ)</option>
+          <option value="(จันทร์ ปราสาทิกะพันธ์)">(จันทร์ ปราสาทิกะพันธ์)</option>
+          <option value="__custom__">อื่นๆ — พิมพ์เอง</option>
+        </select>
         <input type="text" id="sig2name" value="(พิพัฒน์ ทิ้งเชื้อ)">
         <input type="text" id="sig2role" value="ผู้ดำเนินงาน" style="margin-top:4px;">
       </div>
@@ -1025,6 +1030,23 @@ document.getElementById("budgetNo").addEventListener("input", e=>{ state.budgetN
 document.getElementById("refDoc").addEventListener("input", e=>{ state.refDoc = e.target.value; renderDoc(); });
 ["sig1name","sig1role","sig2name","sig2role","sig3name","sig3role","sig4name","sig4role"].forEach(id=>{
   document.getElementById(id).addEventListener("input", renderDoc);
+});
+// ดรอปดาวน์เลือกชื่อสำเร็จรูปสำหรับช่อง 2 — เลือกแล้วเติมชื่อลงช่องข้อความให้อัตโนมัติ
+// (ยังแก้ไขในช่องข้อความเองได้ตามปกติ ถ้าเลือก "อื่นๆ — พิมพ์เอง" จะไม่ไปยุ่งกับชื่อที่พิมพ์ไว้)
+const sig2preset = document.getElementById("sig2preset");
+const sig2name = document.getElementById("sig2name");
+sig2preset.addEventListener("change", e=>{
+  if(e.target.value !== "__custom__"){
+    sig2name.value = e.target.value;
+    renderDoc();
+  } else {
+    sig2name.focus();
+  }
+});
+// ถ้าพิมพ์ชื่อในช่องข้อความเองแบบไม่ตรงกับตัวเลือกในดรอปดาวน์ ให้ดรอปดาวน์โชว์ "อื่นๆ" ไว้ก่อน
+sig2name.addEventListener("input", ()=>{
+  const match = Array.from(sig2preset.options).some(o => o.value === sig2name.value);
+  sig2preset.value = match ? sig2name.value : "__custom__";
 });
 document.getElementById("printBtn").addEventListener("click", ()=> window.print());
 document.getElementById("jobDate").value = state.jobDate;
