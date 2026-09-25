@@ -456,6 +456,16 @@
     <div class="hint" id="excelHint" style="margin-top:6px;"></div>
     <button class="print-btn" id="copyTrackingBtn" style="background:#375a8c;color:#fff;margin-top:8px;">📋 คัดลอกแถวสำหรับวางลงชีตติดตามงาน</button>
     <div class="hint" id="copyTrackingHint" style="margin-top:6px;"></div>
+
+    <div class="fieldset" style="margin-top:14px;">
+      <h3>นำเข้าแบบหลายงานพร้อมกัน</h3>
+      <div class="hint">อัปโหลดไฟล์ Excel ที่รวมใบเปิดงานที่ทำเสร็จแล้วหลายงาน (1 ชีต = 1 งาน เช่นไฟล์ที่ดาวน์โหลดจากเครื่องมือนี้หลาย ๆ ใบมารวมกัน) ระบบจะอ่านทุกชีตแล้วสร้างแถวสำหรับวางลงชีตติดตามงานให้ครบทุกงานในครั้งเดียว</div>
+      <input type="file" id="bulkFileInput" accept=".xlsx" style="margin-top:8px;">
+      <div class="hint" id="bulkHint" style="margin-top:6px;"></div>
+      <div id="bulkPreview" style="margin-top:8px;"></div>
+      <button type="button" class="print-btn" id="copyBulkBtn" style="background:#375a8c;color:#fff;margin-top:8px;display:none;">📋 คัดลอกทุกแถว (ทุกงาน)</button>
+      <div class="hint" id="copyBulkHint" style="margin-top:6px;"></div>
+    </div>
   </div>
 
   <!-- ============ RIGHT — rendered form ============ -->
@@ -598,11 +608,18 @@ function thaiDate(iso){
 // file (drag-drop, click-to-browse, buttons — all of it). Guarding it here
 // means a failed CDN load only breaks PDF parsing, not the whole page.
 let _pdfjsWorkerReady = false;
+const TESSERACT_VERSION = "5.1.1";
 async function ensureTesseract(){
   if(typeof Tesseract !== "undefined") return;
   await new Promise((resolve, reject)=>{
     const s = document.createElement("script");
-    s.src = "https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.1/tesseract.min.js";
+    // สำคัญ: ต้องโหลดจาก jsDelivr ไม่ใช่ cdnjs — Tesseract.js เวลาหา
+    // worker.min.js / tesseract-core.wasm.js ต่อเอง (auto-detect) มันเดา
+    // ตำแหน่งไฟล์จากโครงสร้างโฟลเดอร์ของ jsDelivr เป็นค่าเริ่มต้น ถ้าโหลด
+    // ตัวหลักจาก cdnjs (คนละโครงสร้างโฟลเดอร์) การเดาที่ว่าจะพลาด ทำให้
+    // createWorker ค้างหรือล้มเหลวแบบเงียบ ๆ โดยไม่มีข้อความ error ชัดเจน
+    // นี่คือปัญหาที่รู้กันดีในตัวไลบรารีนี้ — ใช้ jsDelivr แก้ตรงจุดนี้ได้เลย
+    s.src = `https://cdn.jsdelivr.net/npm/tesseract.js@${TESSERACT_VERSION}/dist/tesseract.min.js`;
     s.onload = () => resolve();
     s.onerror = () => reject(new Error("โหลดตัวอ่านข้อความจากภาพ (OCR) ไม่สำเร็จ — เช็คการเชื่อมต่ออินเทอร์เน็ต"));
     document.head.appendChild(s);
@@ -617,13 +634,23 @@ async function ensureTesseract(){
 // ควรตรวจทานตัวเลข/รหัสวัสดุทุกแถวก่อนใช้งานจริง
 async function ocrPdf(pdf, onProgress){
   await ensureTesseract();
-  const worker = await Tesseract.createWorker("eng+tha", 1, {
-    logger: (m)=>{
-      if(onProgress && m.status){
-        onProgress(m.status, m.progress || 0);
+  let worker;
+  try{
+    // ระบุ workerPath/corePath ตรง ๆ ให้ชี้ไป jsDelivr เวอร์ชันเดียวกันทั้งหมด
+    // กันไม่ให้ไลบรารีต้อง "เดา" เอง ซึ่งเป็นจุดที่พังบ่อยที่สุด
+    worker = await Tesseract.createWorker("eng+tha", 1, {
+      workerPath: `https://cdn.jsdelivr.net/npm/tesseract.js@${TESSERACT_VERSION}/dist/worker.min.js`,
+      corePath: `https://cdn.jsdelivr.net/npm/tesseract.js-core@${TESSERACT_VERSION}/tesseract-core.wasm.js`,
+      logger: (m)=>{
+        if(onProgress && m.status){
+          onProgress(m.status, m.progress || 0);
+        }
       }
-    }
-  });
+    });
+  } catch(err){
+    console.error("Tesseract createWorker failed:", err);
+    throw new Error("เปิดตัวอ่าน OCR ไม่สำเร็จ (โหลดไฟล์ตัวอ่านจาก jsDelivr ไม่ได้) — เช็คอินเทอร์เน็ต หรือลอง ad blocker/VPN ที่อาจบล็อก cdn.jsdelivr.net");
+  }
   let fullLines = [];
   try{
     for(let p=1;p<=pdf.numPages;p++){
@@ -831,7 +858,15 @@ function applyMatcode(it, autofillPrice){
   const m = lookupMatcode(it.code);
   if(!m){ it.matcodePrice = null; return; }
   it.matcodePrice = m.price;
-  if(!it.desc) it.desc = m.desc;
+  // ถ้าเจอรหัสในฐาน Matcode ให้ใช้ "ชื่อจากฐานข้อมูล" แทนข้อความที่อ่านมาจากไฟล์เสมอ
+  // (ไม่ใช่แค่ตอนอ่านไม่ได้/ว่างเปล่า) เพราะฐาน Matcode เป็นชื่อที่พิมพ์ไว้ล่วงหน้า
+  // ถูกต้องแน่นอน ต่างจากข้อความที่ได้จาก PDF/OCR ซึ่งมีโอกาสเพี้ยนได้
+  // (โดยเฉพาะไฟล์สแกนที่ผ่าน OCR — ภาษาไทยเสี่ยงอ่านผิดง่าย) เก็บของเดิมไว้ดูเทียบ
+  // ใน rawDesc เผื่อรหัสที่อ่านมาดันไปตรงกับรหัสอื่นโดยบังเอิญ จะได้ตรวจสอบย้อนกลับได้
+  if(it.desc && it.desc.trim() && it.desc.trim() !== m.desc.trim()){
+    it.rawDesc = it.desc;
+  }
+  it.desc = m.desc;
   if(!it.unit) it.unit = m.unit;
   if(autofillPrice || !it.unitPrice){
     it.unitPrice = m.price;
@@ -880,11 +915,13 @@ function renderItemsEditor(){
     }
     if(hasRef){
       const hint = document.createElement("tr");
+      const rawNote = it.rawDesc ? `<br><span style="font-size:10.5px;color:#8a7f5e;">ข้อความต้นฉบับที่อ่านได้: "${it.rawDesc}" — ถ้ารหัสนี้ไม่ตรงกับของจริง กรุณาแก้รหัสด้านซ้าย</span>` : "";
       hint.innerHTML = `<td></td><td colspan="5" style="padding:0 5px 5px;">
         <span style="font-size:11px;color:${diff? '#a4392b':'#5c7a5f'};">
-          ราคาอ้างอิง Matcode: ฿${thb(it.matcodePrice)}${diff? ' (ต่างจากราคาที่กรอกไว้)':' ✓'}
+          ราคาอ้างอิง Matcode: ฿${thb(it.matcodePrice)}${diff? ' (ต่างจากราคาที่กรอกไว้)':' ✓'}${it.rawDesc? ' — ใช้ชื่อจากฐาน Matcode แทนข้อความที่อ่านได้':''}
         </span>
         ${diff? `<button type="button" class="btn-ghost use-matcode" data-i="${i}" style="padding:1px 8px;font-size:11px;margin-left:6px;">ใช้ราคานี้</button>`:''}
+        ${rawNote}
       </td>`;
       itemsBody.appendChild(hint);
     }
@@ -1265,6 +1302,168 @@ document.getElementById("copyTrackingBtn").addEventListener("click", async ()=>{
     hint.style.color = "#2f5233";
   } else {
     hint.innerHTML = `คัดลอกอัตโนมัติไม่สำเร็จ (เบราว์เซอร์ไม่อนุญาต) — เลือกข้อความด้านล่างแล้วกด Ctrl+C เอง:<br><textarea readonly style="width:100%;margin-top:4px;font-size:11px;" rows="2" onclick="this.select()">${row.replace(/</g,"&lt;")}</textarea>`;
+    hint.style.color = "#a4392b";
+  }
+});
+
+// ---------- นำเข้าไฟล์รวมหลายงาน (1 ชีต = 1 ใบเปิดงานที่ทำเสร็จแล้ว) ----------
+// อ่านทุกชีตในไฟล์ ดึงข้อมูลเดียวกับที่ buildTrackingRow() ใช้ต่อ 1 งาน
+// แล้วสร้างแถวสำหรับวางลงชีตติดตามงานให้ครบทุกงานในครั้งเดียว
+// โครงสร้างที่อ่าน (ตรงกับไฟล์ที่เครื่องมือนี้สร้างออกมาเป๊ะ เพราะเป็นไฟล์เดียวกัน):
+//   - หัวข้อ "เลขที่ใบเปิดงาน" / "วันที่ออกใบเปิดงาน" อยู่แถวบน ๆ คอลัมน์ I (label) / J (value)
+//   - แถวหัวข้อกลุ่มโรงงาน: คอลัมน์ C มีคำว่า "โรงงาน" คอลัมน์ B ว่าง
+//   - แถวรายการ: คอลัมน์ B = ลำดับ (ตัวเลข), C = รหัส, D = รายละเอียด, H = ราคา, I = จำนวน, J = จำนวนเงิน
+let _bulkRows = [];
+
+function readSheetForTracking(sheet){
+  let jobno = "", jobdate = "";
+  const groups = [];
+  let curGroup = null;
+  for(let r = 1; r <= 90; r++){
+    const lbl = sheet.cell(r, 9).value();   // column I
+    const val = sheet.cell(r, 10).value();  // column J
+    if(typeof lbl === "string" && lbl.includes("เลขที่ใบเปิดงาน")) jobno = val || "";
+    if(typeof lbl === "string" && lbl.includes("วันที่ออกใบเปิดงาน")) jobdate = val;
+
+    const b = sheet.cell(r, 2).value();  // column B
+    const c = sheet.cell(r, 3).value();  // column C
+    if(typeof c === "string" && c.includes("โรงงาน") && (b === null || b === undefined || b === "")){
+      curGroup = {label: c, items: []};
+      groups.push(curGroup);
+      continue;
+    }
+    if(typeof b === "number" && c && curGroup){
+      const d = sheet.cell(r, 4).value();
+      const h = sheet.cell(r, 8).value();
+      const i = sheet.cell(r, 9).value();
+      const j = sheet.cell(r, 10).value();
+      curGroup.items.push({code:c, desc:d, price:h, qty:i, amount:j});
+    }
+  }
+  const totalItems = groups.reduce((n,g)=>n+g.items.length, 0);
+  const totalAmount = groups.reduce((s,g)=>s+g.items.reduce((s2,it)=>s2+(Number(it.amount)||0), 0), 0);
+  const poNumbers = [];
+  groups.forEach(g=>{
+    const m = g.label.match(/\d{6,12}/g);
+    if(m) m.forEach(x=>{ if(!poNumbers.includes(x)) poNumbers.push(x); });
+  });
+  const plants = [];
+  groups.forEach(g=>{
+    const m = g.label.match(/^(.*?)\s*\(/);
+    const name = m ? m[1].trim() : g.label.trim();
+    if(!plants.includes(name)) plants.push(name);
+  });
+
+  // แปลงวันที่ (Date object จาก xlsx-populate) เป็น DD-MM-YYYY
+  let jobDateFmt = "";
+  if(jobdate instanceof Date){
+    const dd = String(jobdate.getDate()).padStart(2,"0");
+    const mm = String(jobdate.getMonth()+1).padStart(2,"0");
+    jobDateFmt = `${dd}-${mm}-${jobdate.getFullYear()}`;
+  } else if(typeof jobdate === "string"){
+    jobDateFmt = jobdate;
+  }
+
+  return {
+    sheetName: sheet.name(),
+    jobno, jobDateFmt,
+    plants: plants.join(" / "),
+    ioPo: poNumbers.join(", "),
+    totalItems, totalAmount,
+    ok: groups.length > 0 && totalItems > 0
+  };
+}
+
+function buildBulkRow(info){
+  const cols = [
+    "", "", info.jobDateFmt, "", "", "",
+    info.ioPo, info.jobno || info.sheetName, "", info.plants,
+    info.totalItems || "", "", "",
+    info.totalAmount ? info.totalAmount.toFixed(2) : "",
+    "", "", "", "", "", "", "", "", "",
+  ];
+  return cols.join("\t");
+}
+
+document.getElementById("bulkFileInput").addEventListener("change", async (e)=>{
+  const file = e.target.files[0];
+  const hint = document.getElementById("bulkHint");
+  const preview = document.getElementById("bulkPreview");
+  const copyBtn = document.getElementById("copyBulkBtn");
+  copyBtn.style.display = "none";
+  preview.innerHTML = "";
+  _bulkRows = [];
+  if(!file) return;
+  hint.textContent = "กำลังอ่านไฟล์ ...";
+  hint.style.color = "#6b6455";
+  try{
+    const buf = await file.arrayBuffer();
+    const workbook = await XlsxPopulate.fromDataAsync(buf);
+    const sheets = workbook.sheets();
+    const infos = sheets.map(readSheetForTracking);
+    const ok = infos.filter(x=>x.ok);
+    const failed = infos.filter(x=>!x.ok);
+
+    _bulkRows = ok.map(buildBulkRow);
+
+    let tableHtml = `<table style="width:100%;border-collapse:collapse;font-size:11.5px;">
+      <tr style="background:#eee6d2;text-align:left;">
+        <th style="padding:3px 6px;">ชีต</th><th style="padding:3px 6px;">WO</th>
+        <th style="padding:3px 6px;">โรงงาน</th><th style="padding:3px 6px;">IO/PO</th>
+        <th style="padding:3px 6px;">จำนวนรายการ</th><th style="padding:3px 6px;">ยอดรวม</th>
+      </tr>`;
+    ok.forEach(x=>{
+      tableHtml += `<tr>
+        <td style="padding:3px 6px;border-top:1px solid #e2dcc8;">${x.sheetName}</td>
+        <td style="padding:3px 6px;border-top:1px solid #e2dcc8;">${x.jobno||"-"}</td>
+        <td style="padding:3px 6px;border-top:1px solid #e2dcc8;">${x.plants||"-"}</td>
+        <td style="padding:3px 6px;border-top:1px solid #e2dcc8;">${x.ioPo||"-"}</td>
+        <td style="padding:3px 6px;border-top:1px solid #e2dcc8;text-align:right;">${x.totalItems}</td>
+        <td style="padding:3px 6px;border-top:1px solid #e2dcc8;text-align:right;">${thb(x.totalAmount)}</td>
+      </tr>`;
+    });
+    tableHtml += `</table>`;
+    preview.innerHTML = tableHtml;
+
+    const failNote = failed.length ? ` — อ่านไม่ได้ ${failed.length} ชีต (${failed.map(x=>x.sheetName).join(", ")}) อาจไม่ใช่ไฟล์ใบเปิดงานจากเครื่องมือนี้ หรือโครงสร้างไม่ตรง` : "";
+    hint.textContent = `อ่านสำเร็จ ${ok.length} งาน จากทั้งหมด ${infos.length} ชีต${failNote}`;
+    hint.style.color = failed.length ? "#a4392b" : "#2f5233";
+    if(ok.length > 0) copyBtn.style.display = "inline-block";
+  } catch(err){
+    console.error(err);
+    hint.textContent = "เปิดไฟล์ไม่สำเร็จ: " + err.message + " — ตรวจว่าเป็นไฟล์ .xlsx ที่ถูกต้อง";
+    hint.style.color = "#a4392b";
+  }
+});
+
+document.getElementById("copyBulkBtn").addEventListener("click", async ()=>{
+  const hint = document.getElementById("copyBulkHint");
+  if(_bulkRows.length === 0) return;
+  const block = _bulkRows.join("\n");
+  let copied = false;
+  try{
+    if(navigator.clipboard && window.isSecureContext){
+      await navigator.clipboard.writeText(block);
+      copied = true;
+    }
+  } catch(e){ /* fallback */ }
+  if(!copied){
+    try{
+      const ta = document.createElement("textarea");
+      ta.value = block;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.focus(); ta.select();
+      copied = document.execCommand("copy");
+      document.body.removeChild(ta);
+    } catch(e){ copied = false; }
+  }
+  if(copied){
+    hint.textContent = `คัดลอกแล้ว ✓ — ${_bulkRows.length} แถว ไปวาง (Ctrl+V) ที่แถวว่างแถวแรกในชีตติดตามงานได้เลย แต่ละแถวจะลงคนละบรรทัดอัตโนมัติ`;
+    hint.style.color = "#2f5233";
+  } else {
+    hint.innerHTML = `คัดลอกอัตโนมัติไม่สำเร็จ — เลือกข้อความด้านล่างแล้วกด Ctrl+C เอง:<br><textarea readonly style="width:100%;margin-top:4px;font-size:11px;" rows="4" onclick="this.select()">${_bulkRows.join("\n").replace(/</g,"&lt;")}</textarea>`;
     hint.style.color = "#a4392b";
   }
 });
