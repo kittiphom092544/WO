@@ -350,7 +350,7 @@
   <h1>ใบเสนอราคา → ใบเปิดงาน</h1>
   <span>ลากไฟล์ PDF ใบเสนอราคา (TVT-xxxxxx) แล้วระบบจะกรอกฟอร์มให้อัตโนมัติ</span>
   <a href="#bulkSection" style="margin-left:auto;background:#375a8c;color:#fff;padding:5px 12px;border-radius:14px;font-size:12px;text-decoration:none;white-space:nowrap;">📥 นำเข้า Excel หลายงาน</a>
-  <span style="font-size:11px;opacity:.7;white-space:nowrap;">v25-09b (ช่อง Excel ใต้ช่อง PDF)</span>
+  <span style="font-size:11px;opacity:.7;white-space:nowrap;">v25-09c (แก้วันที่)</span>
 </div>
 
 <div class="layout">
@@ -1237,8 +1237,8 @@ function buildTrackingRow(){
   const f = FACTORIES[state.factoryIdx] || {};
   const custName = (f.key && f.key !== "__custom__") ? `โรงงานอาหารสัตว์บก${f.key}` : "";
 
-  const dateParts = (state.jobDate || "").split("-"); // YYYY-MM-DD -> DD-MM-YYYY
-  const jobDateFmt = dateParts.length === 3 ? `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}` : "";
+  const dateParts = (state.jobDate || "").split("-"); // YYYY-MM-DD -> d/m/yyyy (เหมือนชีตติดตามงาน)
+  const jobDateFmt = dateParts.length === 3 ? `${+dateParts[2]}/${+dateParts[1]}/${dateParts[0]}` : "";
 
   const poMatch = (state.refDoc || "").match(/\d{6,12}/);
   const ioPo = poMatch ? poMatch[0] : "";
@@ -1321,6 +1321,18 @@ document.getElementById("copyTrackingBtn").addEventListener("click", async ()=>{
 //   - แถวรายการ: คอลัมน์ B = ลำดับ (ตัวเลข), C = รหัส, D = รายละเอียด, H = ราคา, I = จำนวน, J = จำนวนเงิน
 let _bulkRows = [];
 
+function fmtSheetDate(v){
+  if(v === null || v === undefined || v === "") return "";
+  if(typeof v === "number"){
+    const d = new Date(Date.UTC(1899, 11, 30) + Math.floor(v) * 86400000);
+    return `${d.getUTCDate()}/${d.getUTCMonth()+1}/${d.getUTCFullYear()}`;
+  }
+  if(v instanceof Date){
+    return `${v.getDate()}/${v.getMonth()+1}/${v.getFullYear()}`;
+  }
+  return String(v);
+}
+
 function readSheetForTracking(sheet){
   let jobno = "", jobdate = "";
   const groups = [];
@@ -1360,15 +1372,10 @@ function readSheetForTracking(sheet){
     if(!plants.includes(name)) plants.push(name);
   });
 
-  // แปลงวันที่ (Date object จาก xlsx-populate) เป็น DD-MM-YYYY
-  let jobDateFmt = "";
-  if(jobdate instanceof Date){
-    const dd = String(jobdate.getDate()).padStart(2,"0");
-    const mm = String(jobdate.getMonth()+1).padStart(2,"0");
-    jobDateFmt = `${dd}-${mm}-${jobdate.getFullYear()}`;
-  } else if(typeof jobdate === "string"){
-    jobDateFmt = jobdate;
-  }
+  // แปลงวันที่เป็น d/m/yyyy ให้เหมือนรูปแบบในชีตติดตามงาน (เช่น 2/9/2026)
+  // xlsx-populate คืนค่าเซลล์วันที่เป็น "ตัวเลขซีเรียลของ Excel" ไม่ใช่ Date
+  // ตรงนี้เคยพลาดจนช่องวันที่ว่าง จึงรองรับทั้งตัวเลข / Date / ข้อความ
+  const jobDateFmt = fmtSheetDate(jobdate);
 
   return {
     sheetName: sheet.name(),
