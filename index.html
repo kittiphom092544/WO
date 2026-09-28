@@ -350,7 +350,7 @@
   <h1>ใบเสนอราคา → ใบเปิดงาน</h1>
   <span>ลากไฟล์ PDF ใบเสนอราคา (TVT-xxxxxx) แล้วระบบจะกรอกฟอร์มให้อัตโนมัติ</span>
   <a href="#bulkSection" style="margin-left:auto;background:#375a8c;color:#fff;padding:5px 12px;border-radius:14px;font-size:12px;text-decoration:none;white-space:nowrap;">📥 นำเข้า Excel หลายงาน</a>
-  <span style="font-size:11px;opacity:.7;white-space:nowrap;">v25-09d (ตัวย่อโรงงาน+วันที่รับงาน)</span>
+  <span style="font-size:11px;opacity:.7;white-space:nowrap;">v25-09f (มีชีตสั่งซื้อ)</span>
 </div>
 
 <div class="layout">
@@ -374,6 +374,7 @@
       <div class="hint" id="bulkHint" style="margin-top:6px;"></div>
       <div id="bulkPreview" style="margin-top:8px;"></div>
       <button type="button" class="print-btn" id="copyBulkBtn" style="background:#375a8c;color:#fff;margin-top:8px;display:none;">📋 คัดลอกทุกแถว (ทุกงาน)</button>
+      <button type="button" class="print-btn" id="copyBulkPoBtn" style="background:#8a4b7a;color:#fff;margin-top:8px;display:none;">🛒 คัดลอกทุกรายการ (ชีตสั่งซื้อ)</button>
       <div class="hint" id="copyBulkHint" style="margin-top:6px;"></div>
     </div>
 
@@ -471,6 +472,12 @@
     <div class="hint" id="excelHint" style="margin-top:6px;"></div>
     <button class="print-btn" id="copyTrackingBtn" style="background:#375a8c;color:#fff;margin-top:8px;">📋 คัดลอกแถวสำหรับวางลงชีตติดตามงาน</button>
     <div class="hint" id="copyTrackingHint" style="margin-top:6px;"></div>
+    <div class="field" style="margin-top:10px;">
+      <label>ผู้รับผิดชอบ (ชีตสั่งซื้อ)</label>
+      <input type="text" id="buyerName" value="กิตติภูมิ">
+    </div>
+    <button class="print-btn" id="copyPoBtn" style="background:#8a4b7a;color:#fff;margin-top:8px;">🛒 คัดลอกแถวสำหรับชีตสั่งซื้อ (1 แถว/รายการ)</button>
+    <div class="hint" id="copyPoHint" style="margin-top:6px;"></div>
 
   </div>
 
@@ -1233,46 +1240,49 @@ document.getElementById("excelBtn").addEventListener("click", downloadExcel);
 // คอลัมน์อื่น (ผู้รับผิดชอบ, สถานะอนุมัติ, ต้นทุนแรงงาน/overhead ฯลฯ) เป็นข้อมูล
 // จากกระบวนการภายในที่เครื่องมือนี้ไม่มีทางรู้ได้ เลยเว้นว่างไว้ให้กรอกเอง
 // ดีกว่าเดาแล้วใส่ค่าผิดลงชีตติดตามจริง
-function buildTrackingRow(){
-  const f = FACTORIES[state.factoryIdx] || {};
-  const custName = (f.key && f.key !== "__custom__") ? (f.sheet || f.key) : "";
-  const recvDate = earliestStoDate([state.refDoc].concat(state.items.map(it=>it.groupLabel)));
-
-  const dateParts = (state.jobDate || "").split("-"); // YYYY-MM-DD -> d/m/yyyy (เหมือนชีตติดตามงาน)
-  const jobDateFmt = dateParts.length === 3 ? `${+dateParts[2]}/${+dateParts[1]}/${dateParts[0]}` : "";
-
-  const poMatch = (state.refDoc || "").match(/\d{6,12}/);
-  const ioPo = poMatch ? poMatch[0] : "";
-
-  const totalCount = state.items.length;
-  const totalAmount = state.items.reduce((s,it)=> s + (it.qty||0)*(it.unitPrice||0), 0);
-
+// สร้างแถว 23 คอลัมน์ (คั่นด้วย Tab) จากค่าที่รู้ — ใช้ร่วมกันทั้งแบบเดี่ยวและแบบหลายงาน
+function trackingLine(o){
   const cols = [
-    "",                       // ลำดับ — เรียงตามแถวเดิมในชีต กรอกเองตามลำดับ
-    recvDate,                 // วันที่รับงาน — วันที่ข้างเลข STO (ถ้ามีหลาย STO ใช้วันที่เก่าสุด)
-    jobDateFmt,               // วันที่ใบเปิดงาน
-    "",                       // ผู้รับผิดชอบ
-    "",                       // กลุ่มธุรกิจ
-    "",                       // ประเภทงาน
-    ioPo,                     // IO/PO
-    state.jobNo || "",        // WO
-    "",                       // โครงการ/รายละเอียด
-    custName,                 // ลูกค้า (ชื่อโรงงาน)
-    totalCount || "",         // จำนวน (จำนวนรายการทั้งหมด)
-    "",                       // อนุมัติรับงาน
-    "",                       // ลูกค้าอนุมัติ
-    totalAmount ? totalAmount.toFixed(2) : "", // Matcode_Cost (ยอดรวมจากราคาที่กรอก/อ้างอิง)
-    "",                       // Labor cost_cost
-    "",                       // overhead
-    "",                       // Standard_Cost
-    "",                       // VAT7%
-    "",                       // Price
-    "",                       // สถานะสั่งของ
-    "",                       // สถานะผลิต
-    "",                       // รายการCalculate Cost
-    "",                       // หมายเหตุ
+    "",                                   // ลำดับ
+    o.recvDate || "",                     // วันที่รับงาน (วันที่ข้างเลข STO)
+    o.jobDate || "",                      // วันที่ใบเปิดงาน (วันที่หัวกระดาษด้านขวา)
+    "", "", "",                           // ผู้รับผิดชอบ, กลุ่มธุรกิจ, ประเภทงาน
+    o.po || "",                           // IO/PO
+    o.wo || "",                           // WO
+    "",                                   // โครงการ/รายละเอียด
+    o.cust || "",                         // ลูกค้า (ตัวย่อโรงงาน)
+    o.count || "",                        // จำนวน (จำนวนรายการของ STO นั้น)
+    "", "",                               // อนุมัติรับงาน, ลูกค้าอนุมัติ
+    o.amount ? Number(o.amount).toFixed(2) : "", // Matcode_Cost
+    "", "", "", "", "", "", "", "", "",   // Labor..หมายเหตุ เว้นว่างให้กรอกเอง
   ];
   return cols.join("\t");
+}
+
+// 1 แถวต่อ 1 เลข STO (เลข WO ซ้ำกันได้) — แบ่งตามกลุ่ม STO ที่แสดงในใบเปิดงาน
+function buildTrackingRow(){
+  const f = FACTORIES[state.factoryIdx] || {};
+  const cust = (f.key && f.key !== "__custom__") ? (f.sheet || f.key) : "";
+  const dateParts = (state.jobDate || "").split("-"); // YYYY-MM-DD -> d/m/yyyy
+  const jobDate = dateParts.length === 3 ? `${+dateParts[2]}/${+dateParts[1]}/${dateParts[0]}` : "";
+
+  const groups = [];
+  state.items.forEach(it=>{
+    const label = it.groupLabel || state.refDoc || "";
+    const key = (label.match(/\d{6,12}/) || [label])[0];   // เลข STO เดียวกัน = แถวเดียว
+    let g = groups.find(x=>x.key === key);
+    if(!g){ g = {key, label, items:[]}; groups.push(g); }
+    g.items.push(it);
+  });
+  return groups.map(g=>{
+    const m = g.label.match(/\d{6,12}/);
+    return trackingLine({
+      recvDate: earliestStoDate([g.label]),
+      jobDate, po: m ? m[0] : "", wo: state.jobNo || "", cust,
+      count: g.items.length,
+      amount: g.items.reduce((s,it)=> s + (it.qty||0)*(it.unitPrice||0), 0),
+    });
+  }).join("\n");
 }
 
 document.getElementById("copyTrackingBtn").addEventListener("click", async ()=>{
@@ -1305,12 +1315,108 @@ document.getElementById("copyTrackingBtn").addEventListener("click", async ()=>{
     } catch(e){ copied = false; }
   }
   if(copied){
-    hint.textContent = "คัดลอกแล้ว ✓ — ไปวาง (Ctrl+V) ที่แถวว่างในชีตติดตามงานได้เลย (กรอกช่องที่เว้นว่างไว้เพิ่มเอง เช่น ผู้รับผิดชอบ, สถานะอนุมัติ)";
+    hint.textContent = `คัดลอกแล้ว ✓ — ${row.split("\n").length} แถว (1 แถวต่อ 1 เลข STO) ไปวาง (Ctrl+V) ที่แถวว่างในชีตติดตามงานได้เลย กรอกช่องที่เว้นว่างเพิ่มเอง เช่น ผู้รับผิดชอบ, สถานะอนุมัติ`;
     hint.style.color = "#2f5233";
   } else {
     hint.innerHTML = `คัดลอกอัตโนมัติไม่สำเร็จ (เบราว์เซอร์ไม่อนุญาต) — เลือกข้อความด้านล่างแล้วกด Ctrl+C เอง:<br><textarea readonly style="width:100%;margin-top:4px;font-size:11px;" rows="2" onclick="this.select()">${row.replace(/</g,"&lt;")}</textarea>`;
     hint.style.color = "#a4392b";
   }
+});
+
+// ---------- ชีตสั่งซื้อ: 1 แถวต่อ 1 รายการสินค้า (18 คอลัมน์ A-R ตามลำดับหัวตารางในชีตของผู้ใช้) ----------
+// ลำดับ, วันรับ Order, Plant, ประเภท(STO/โครงการ), เลข IO/Order, ชื่อโครงการ, ผู้รับผิดชอบ,
+// ชื่อเครื่องจักร(ช่องที่ผู้ใช้ใส่รหัสวัสดุ), รุ่น, รายละเอียด, จำนวน, หน่วย, หมายเหตุ,
+// ชื่อเครื่องจักร(ช่องฟ้า), วันที่สั่งซื้อ, ประเภท(หลัก), WO, วิธีการ...
+function cleanCell(v){ return String(v==null?"":v).replace(/[\t\r\n]+/g," ").trim(); }
+
+function purchaseLine(o){
+  const isSto = o.isSto !== false;
+  const cols = [
+    "",                                   // ลำดับ
+    o.jobDate || "",                      // วันรับ Order (ตรงกับวันที่ใบเปิดงาน ตามที่เห็นในชีตจริง)
+    o.plant || "",                        // Plant (ตัวย่อโรงงาน)
+    isSto ? "STO" : "โครงการ",             // ประเภทงาน
+    o.po || "",                           // เลข IO / Order
+    isSto && o.po ? `STO ${o.po}` : "",   // ชื่อโครงการ
+    o.buyer || "",                        // ผู้รับผิดชอบ
+    cleanCell(o.code),                    // ช่อง "ชื่อเครื่องจักร" (ในชีตใส่รหัสวัสดุ)
+    "-",                                  // รุ่น
+    cleanCell(o.desc),                    // รายละเอียด
+    o.qty === 0 || o.qty ? o.qty : "",    // จำนวน
+    cleanCell(o.unit) || "PC",            // หน่วย
+    "-",                                  // หมายเหตุ
+    "",                                   // ชื่อเครื่องจักร (ช่องสีฟ้า)
+    o.jobDate || "",                      // วันที่สั่งซื้อ (ในชีตจริงงานล่าสุดตรงกับวันรับ Order)
+    "หลัก",                                // ประเภท
+    o.wo || "",                           // WO
+    "",                                   // วิธีการ...
+  ];
+  return cols.join("\t");
+}
+
+// แบบเดี่ยว: จากใบเปิดงานที่กำลังกรอก แยกตามเลข STO แล้วไล่ทีละรายการ
+function buildPurchaseRows(){
+  const f = FACTORIES[state.factoryIdx] || {};
+  const plant = (f.key && f.key !== "__custom__") ? (f.sheet || f.key) : "";
+  const dp = (state.jobDate || "").split("-");
+  const jobDate = dp.length === 3 ? `${+dp[2]}/${+dp[1]}/${dp[0]}` : "";
+  const buyer = (document.getElementById("buyerName").value || "").trim();
+  const groups = [];
+  state.items.forEach(it=>{
+    const label = it.groupLabel || state.refDoc || "";
+    const key = (label.match(/\d{6,12}/) || [label])[0];
+    let g = groups.find(x=>x.key === key);
+    if(!g){ g = {key, label, items:[]}; groups.push(g); }
+    g.items.push(it);
+  });
+  const lines = [];
+  groups.forEach(g=>{
+    const m = g.label.match(/\d{6,12}/);
+    g.items.forEach(it=>{
+      lines.push(purchaseLine({
+        jobDate, plant, buyer, wo: state.jobNo || "", po: m ? m[0] : "",
+        isSto: /STO/i.test(g.label),
+        code: it.code, desc: it.desc, qty: it.qty, unit: it.unit,
+      }));
+    });
+  });
+  return lines;
+}
+
+async function copyTextToClipboard(text){
+  try{
+    if(navigator.clipboard && window.isSecureContext){ await navigator.clipboard.writeText(text); return true; }
+  } catch(e){ /* ใช้ทางสำรอง */ }
+  try{
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch(e){ return false; }
+}
+
+function reportCopy(hintEl, ok, lines, okMsg){
+  if(ok){
+    hintEl.textContent = okMsg;
+    hintEl.style.color = "#2f5233";
+  } else {
+    hintEl.innerHTML = `คัดลอกอัตโนมัติไม่สำเร็จ — เลือกข้อความด้านล่างแล้วกด Ctrl+C เอง:<br><textarea readonly style="width:100%;margin-top:4px;font-size:11px;" rows="4" onclick="this.select()">${lines.join("\n").replace(/</g,"&lt;")}</textarea>`;
+    hintEl.style.color = "#a4392b";
+  }
+}
+
+document.getElementById("copyPoBtn").addEventListener("click", async ()=>{
+  const hint = document.getElementById("copyPoHint");
+  if(!state.items.length){
+    hint.textContent = "ยังไม่มีรายการสินค้า — วาง PDF หรือกรอกรายการทางซ้ายก่อน";
+    hint.style.color = "#a4392b";
+    return;
+  }
+  const lines = buildPurchaseRows();
+  const ok = await copyTextToClipboard(lines.join("\n"));
+  reportCopy(hint, ok, lines, `คัดลอกแล้ว ✓ — ${lines.length} แถว (1 แถวต่อ 1 รายการ) ไปวาง (Ctrl+V) ที่แถวว่างในชีตสั่งซื้อได้เลย`);
 });
 
 // ---------- นำเข้าไฟล์รวมหลายงาน (1 ชีต = 1 ใบเปิดงานที่ทำเสร็จแล้ว) ----------
@@ -1321,6 +1427,7 @@ document.getElementById("copyTrackingBtn").addEventListener("click", async ()=>{
 //   - แถวหัวข้อกลุ่มโรงงาน: คอลัมน์ C มีคำว่า "โรงงาน" คอลัมน์ B ว่าง
 //   - แถวรายการ: คอลัมน์ B = ลำดับ (ตัวเลข), C = รหัส, D = รายละเอียด, H = ราคา, I = จำนวน, J = จำนวนเงิน
 let _bulkRows = [];
+let _bulkInfos = [];
 
 // ตัวย่อโรงงานสำหรับคอลัมน์ "ลูกค้า" (เช่น TRF, LPF) — ใช้รหัสเดียวกับชื่อชีตของแต่ละโรงงาน
 function plantCodeFromName(name){
@@ -1384,45 +1491,44 @@ function readSheetForTracking(sheet){
     }
   }
   const totalItems = groups.reduce((n,g)=>n+g.items.length, 0);
-  const totalAmount = groups.reduce((s,g)=>s+g.items.reduce((s2,it)=>s2+(Number(it.amount)||0), 0), 0);
-  const poNumbers = [];
-  groups.forEach(g=>{
-    const m = g.label.match(/\d{6,12}/g);
-    if(m) m.forEach(x=>{ if(!poNumbers.includes(x)) poNumbers.push(x); });
-  });
-  const plants = [];
-  groups.forEach(g=>{
-    const m = g.label.match(/^(.*?)\s*\(/);
-    const name = m ? m[1].trim() : g.label.trim();
-    const code = plantCodeFromName(name);
-    if(!plants.includes(code)) plants.push(code);
-  });
-  const recvDate = earliestStoDate(groups.map(g=>g.label));
+  const jobDateFmt = fmtSheetDate(jobdate);   // xlsx-populate คืนวันที่เป็นเลขซีเรียล จึงแปลงเอง
 
-  // แปลงวันที่เป็น d/m/yyyy ให้เหมือนรูปแบบในชีตติดตามงาน (เช่น 2/9/2026)
-  // xlsx-populate คืนค่าเซลล์วันที่เป็น "ตัวเลขซีเรียลของ Excel" ไม่ใช่ Date
-  // ตรงนี้เคยพลาดจนช่องวันที่ว่าง จึงรองรับทั้งตัวเลข / Date / ข้อความ
-  const jobDateFmt = fmtSheetDate(jobdate);
+  // 1 กลุ่ม = 1 เลข STO = 1 แถวในชีตติดตามงาน
+  const rows = [];
+  groups.forEach(g=>{
+    const m = g.label.match(/\d{6,12}/);
+    const nm = g.label.match(/^(.*?)\s*\(/);
+    const r = {
+      po: m ? m[0] : "",
+      isSto: /STO/i.test(g.label),
+      recvDate: earliestStoDate([g.label]),
+      cust: plantCodeFromName(nm ? nm[1].trim() : g.label.trim()),
+      count: g.items.length,
+      amount: g.items.reduce((s2,it)=>s2+(Number(it.amount)||0), 0),
+      items: g.items.map(it=>({code:it.code, desc:it.desc, qty:it.qty})),
+    };
+    // เลข STO เดียวกันที่ถูกแยกเป็นหลายบล็อกในใบเปิดงาน ให้รวมเป็นแถวเดียว
+    const same = r.po ? rows.find(x=>x.po === r.po && x.cust === r.cust) : null;
+    if(same){
+      same.count += r.count; same.amount += r.amount;
+      same.items = same.items.concat(r.items);
+      same.recvDate = same.recvDate || r.recvDate;
+    } else rows.push(r);
+  });
 
   return {
     sheetName: sheet.name(),
-    jobno, jobDateFmt, recvDate,
-    plants: plants.join(" / "),
-    ioPo: poNumbers.join(", "),
-    totalItems, totalAmount,
+    jobno, jobDateFmt, rows,
+    totalItems,
     ok: groups.length > 0 && totalItems > 0
   };
 }
 
-function buildBulkRow(info){
-  const cols = [
-    "", info.recvDate || "", info.jobDateFmt, "", "", "",
-    info.ioPo, info.jobno || info.sheetName, "", info.plants,
-    info.totalItems || "", "", "",
-    info.totalAmount ? info.totalAmount.toFixed(2) : "",
-    "", "", "", "", "", "", "", "", "",
-  ];
-  return cols.join("\t");
+function buildBulkRows(info){
+  return info.rows.map(r=>trackingLine({
+    recvDate: r.recvDate, jobDate: info.jobDateFmt, po: r.po,
+    wo: info.jobno || info.sheetName, cust: r.cust, count: r.count, amount: r.amount,
+  }));
 }
 
 async function processBulkFile(file){
@@ -1430,8 +1536,10 @@ async function processBulkFile(file){
   const preview = document.getElementById("bulkPreview");
   const copyBtn = document.getElementById("copyBulkBtn");
   copyBtn.style.display = "none";
+  document.getElementById("copyBulkPoBtn").style.display = "none";
   preview.innerHTML = "";
   _bulkRows = [];
+  _bulkInfos = [];
   if(!file) return;
   hint.textContent = "กำลังอ่านไฟล์ ...";
   hint.style.color = "#6b6455";
@@ -1443,31 +1551,35 @@ async function processBulkFile(file){
     const ok = infos.filter(x=>x.ok);
     const failed = infos.filter(x=>!x.ok);
 
-    _bulkRows = ok.map(buildBulkRow);
+    _bulkRows = ok.flatMap(buildBulkRows);
+    _bulkInfos = ok;
 
     let tableHtml = `<table style="width:100%;border-collapse:collapse;font-size:11.5px;">
       <tr style="background:#eee6d2;text-align:left;">
-        <th style="padding:3px 6px;">ชีต</th><th style="padding:3px 6px;">WO</th>
-        <th style="padding:3px 6px;">โรงงาน</th><th style="padding:3px 6px;">IO/PO</th>
-        <th style="padding:3px 6px;">จำนวนรายการ</th><th style="padding:3px 6px;">ยอดรวม</th>
+        <th style="padding:3px 6px;">WO</th><th style="padding:3px 6px;">IO/PO (STO)</th>
+        <th style="padding:3px 6px;">โรงงาน</th><th style="padding:3px 6px;">วันที่รับงาน</th>
+        <th style="padding:3px 6px;">รายการ</th><th style="padding:3px 6px;">ยอดรวม</th>
       </tr>`;
+    const cell = 'padding:3px 6px;border-top:1px solid #e2dcc8;';
     ok.forEach(x=>{
-      tableHtml += `<tr>
-        <td style="padding:3px 6px;border-top:1px solid #e2dcc8;">${x.sheetName}</td>
-        <td style="padding:3px 6px;border-top:1px solid #e2dcc8;">${x.jobno||"-"}</td>
-        <td style="padding:3px 6px;border-top:1px solid #e2dcc8;">${x.plants||"-"}</td>
-        <td style="padding:3px 6px;border-top:1px solid #e2dcc8;">${x.ioPo||"-"}</td>
-        <td style="padding:3px 6px;border-top:1px solid #e2dcc8;text-align:right;">${x.totalItems}</td>
-        <td style="padding:3px 6px;border-top:1px solid #e2dcc8;text-align:right;">${thb(x.totalAmount)}</td>
-      </tr>`;
+      x.rows.forEach(r=>{
+        tableHtml += `<tr>
+          <td style="${cell}">${x.jobno||x.sheetName}</td>
+          <td style="${cell}">${r.po||"-"}</td>
+          <td style="${cell}">${r.cust||"-"}</td>
+          <td style="${cell}">${r.recvDate||"-"}</td>
+          <td style="${cell}text-align:right;">${r.count}</td>
+          <td style="${cell}text-align:right;">${thb(r.amount)}</td>
+        </tr>`;
+      });
     });
     tableHtml += `</table>`;
     preview.innerHTML = tableHtml;
 
     const failNote = failed.length ? ` — อ่านไม่ได้ ${failed.length} ชีต (${failed.map(x=>x.sheetName).join(", ")}) อาจไม่ใช่ไฟล์ใบเปิดงานจากเครื่องมือนี้ หรือโครงสร้างไม่ตรง` : "";
-    hint.textContent = `อ่านสำเร็จ ${ok.length} งาน จากทั้งหมด ${infos.length} ชีต${failNote}`;
+    hint.textContent = `อ่านสำเร็จ ${ok.length} งาน (${_bulkRows.length} แถว แยกตามเลข STO) จากทั้งหมด ${infos.length} ชีต${failNote}`;
     hint.style.color = failed.length ? "#a4392b" : "#2f5233";
-    if(ok.length > 0) copyBtn.style.display = "inline-block";
+    if(ok.length > 0){ copyBtn.style.display = "inline-block"; document.getElementById("copyBulkPoBtn").style.display = "inline-block"; }
   } catch(err){
     console.error(err);
     hint.textContent = "เปิดไฟล์ไม่สำเร็จ: " + err.message + " — ตรวจว่าเป็นไฟล์ .xlsx ที่ถูกต้อง";
@@ -1482,6 +1594,25 @@ bulkDrop.addEventListener("click", ()=> bulkInput.click());
 ["dragleave","drop"].forEach(ev=>bulkDrop.addEventListener(ev, e=>{ e.preventDefault(); bulkDrop.classList.remove("drag"); }));
 bulkDrop.addEventListener("drop", e=>{ const f=(e.dataTransfer.files||[])[0]; if(f) processBulkFile(f); });
 bulkInput.addEventListener("change", e=>{ const f=e.target.files[0]; if(f) processBulkFile(f); bulkInput.value=""; });
+
+document.getElementById("copyBulkPoBtn").addEventListener("click", async ()=>{
+  const hint = document.getElementById("copyBulkHint");
+  if(!_bulkInfos.length) return;
+  const buyer = (document.getElementById("buyerName").value || "").trim();
+  const lines = [];
+  _bulkInfos.forEach(info=>{
+    info.rows.forEach(r=>{
+      r.items.forEach(it=>{
+        lines.push(purchaseLine({
+          jobDate: info.jobDateFmt, plant: r.cust, buyer, wo: info.jobno || info.sheetName,
+          po: r.po, isSto: r.isSto, code: it.code, desc: it.desc, qty: it.qty, unit: "PC",
+        }));
+      });
+    });
+  });
+  const ok = await copyTextToClipboard(lines.join("\n"));
+  reportCopy(hint, ok, lines, `คัดลอกแล้ว ✓ — ${lines.length} แถว (1 แถวต่อ 1 รายการ จาก ${_bulkInfos.length} งาน) ไปวาง (Ctrl+V) ที่แถวว่างในชีตสั่งซื้อได้เลย`);
+});
 
 document.getElementById("copyBulkBtn").addEventListener("click", async ()=>{
   const hint = document.getElementById("copyBulkHint");
