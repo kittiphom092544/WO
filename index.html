@@ -350,7 +350,7 @@
   <h1>ใบเสนอราคา → ใบเปิดงาน</h1>
   <span>ลากไฟล์ PDF ใบเสนอราคา (TVT-xxxxxx) แล้วระบบจะกรอกฟอร์มให้อัตโนมัติ</span>
   <a href="#bulkSection" style="margin-left:auto;background:#375a8c;color:#fff;padding:5px 12px;border-radius:14px;font-size:12px;text-decoration:none;white-space:nowrap;">📥 นำเข้า Excel หลายงาน</a>
-  <span style="font-size:11px;opacity:.7;white-space:nowrap;">v25-09c (แก้วันที่)</span>
+  <span style="font-size:11px;opacity:.7;white-space:nowrap;">v25-09d (ตัวย่อโรงงาน+วันที่รับงาน)</span>
 </div>
 
 <div class="layout">
@@ -1235,7 +1235,8 @@ document.getElementById("excelBtn").addEventListener("click", downloadExcel);
 // ดีกว่าเดาแล้วใส่ค่าผิดลงชีตติดตามจริง
 function buildTrackingRow(){
   const f = FACTORIES[state.factoryIdx] || {};
-  const custName = (f.key && f.key !== "__custom__") ? `โรงงานอาหารสัตว์บก${f.key}` : "";
+  const custName = (f.key && f.key !== "__custom__") ? (f.sheet || f.key) : "";
+  const recvDate = earliestStoDate([state.refDoc].concat(state.items.map(it=>it.groupLabel)));
 
   const dateParts = (state.jobDate || "").split("-"); // YYYY-MM-DD -> d/m/yyyy (เหมือนชีตติดตามงาน)
   const jobDateFmt = dateParts.length === 3 ? `${+dateParts[2]}/${+dateParts[1]}/${dateParts[0]}` : "";
@@ -1248,7 +1249,7 @@ function buildTrackingRow(){
 
   const cols = [
     "",                       // ลำดับ — เรียงตามแถวเดิมในชีต กรอกเองตามลำดับ
-    "",                       // วันที่รับงาน — วันที่รับเรื่อง ไม่ใช่วันที่ในฟอร์ม เครื่องมือนี้ไม่รู้
+    recvDate,                 // วันที่รับงาน — วันที่ข้างเลข STO (ถ้ามีหลาย STO ใช้วันที่เก่าสุด)
     jobDateFmt,               // วันที่ใบเปิดงาน
     "",                       // ผู้รับผิดชอบ
     "",                       // กลุ่มธุรกิจ
@@ -1321,6 +1322,30 @@ document.getElementById("copyTrackingBtn").addEventListener("click", async ()=>{
 //   - แถวรายการ: คอลัมน์ B = ลำดับ (ตัวเลข), C = รหัส, D = รายละเอียด, H = ราคา, I = จำนวน, J = จำนวนเงิน
 let _bulkRows = [];
 
+// ตัวย่อโรงงานสำหรับคอลัมน์ "ลูกค้า" (เช่น TRF, LPF) — ใช้รหัสเดียวกับชื่อชีตของแต่ละโรงงาน
+function plantCodeFromName(name){
+  const n = String(name||"").replace(/^โรงงานอาหารสัตว์บก/, "").trim();
+  const f = FACTORIES.find(x => x.key === n) || FACTORIES.find(x => n && x.key && n.includes(x.key));
+  return f ? f.sheet : String(name||"").trim();
+}
+
+// วันที่รับงาน = วันที่ที่อยู่ข้างเลข STO (DATE dd.mm.yyyy) ถ้ามีหลาย STO ใช้วันที่เก่าสุด
+// คืนค่าเป็นรูปแบบ dd.mm.yyyy เหมือนที่เขียนใน STO และในชีตติดตามงาน
+function earliestStoDate(texts){
+  const found = [];
+  (texts||[]).forEach(t=>{
+    const re = /DATE\s*(\d{1,2})\.(\d{1,2})\.(\d{4})/g;
+    let m;
+    while((m = re.exec(String(t||""))) !== null){
+      found.push({d:+m[1], mo:+m[2], y:+m[3]});
+    }
+  });
+  if(!found.length) return "";
+  found.sort((a,b)=> (a.y-b.y) || (a.mo-b.mo) || (a.d-b.d));
+  const f = found[0];
+  return `${String(f.d).padStart(2,"0")}.${String(f.mo).padStart(2,"0")}.${f.y}`;
+}
+
 function fmtSheetDate(v){
   if(v === null || v === undefined || v === "") return "";
   if(typeof v === "number"){
@@ -1369,8 +1394,10 @@ function readSheetForTracking(sheet){
   groups.forEach(g=>{
     const m = g.label.match(/^(.*?)\s*\(/);
     const name = m ? m[1].trim() : g.label.trim();
-    if(!plants.includes(name)) plants.push(name);
+    const code = plantCodeFromName(name);
+    if(!plants.includes(code)) plants.push(code);
   });
+  const recvDate = earliestStoDate(groups.map(g=>g.label));
 
   // แปลงวันที่เป็น d/m/yyyy ให้เหมือนรูปแบบในชีตติดตามงาน (เช่น 2/9/2026)
   // xlsx-populate คืนค่าเซลล์วันที่เป็น "ตัวเลขซีเรียลของ Excel" ไม่ใช่ Date
@@ -1379,7 +1406,7 @@ function readSheetForTracking(sheet){
 
   return {
     sheetName: sheet.name(),
-    jobno, jobDateFmt,
+    jobno, jobDateFmt, recvDate,
     plants: plants.join(" / "),
     ioPo: poNumbers.join(", "),
     totalItems, totalAmount,
@@ -1389,7 +1416,7 @@ function readSheetForTracking(sheet){
 
 function buildBulkRow(info){
   const cols = [
-    "", "", info.jobDateFmt, "", "", "",
+    "", info.recvDate || "", info.jobDateFmt, "", "", "",
     info.ioPo, info.jobno || info.sheetName, "", info.plants,
     info.totalItems || "", "", "",
     info.totalAmount ? info.totalAmount.toFixed(2) : "",
