@@ -349,6 +349,8 @@
 <div class="topbar">
   <h1>ใบเสนอราคา → ใบเปิดงาน</h1>
   <span>ลากไฟล์ PDF ใบเสนอราคา (TVT-xxxxxx) แล้วระบบจะกรอกฟอร์มให้อัตโนมัติ</span>
+  <a href="#bulkSection" style="margin-left:auto;background:#375a8c;color:#fff;padding:5px 12px;border-radius:14px;font-size:12px;text-decoration:none;white-space:nowrap;">📥 นำเข้า Excel หลายงาน</a>
+  <span style="font-size:11px;opacity:.7;white-space:nowrap;">v25-09 (มีนำเข้า Excel)</span>
 </div>
 
 <div class="layout">
@@ -358,7 +360,7 @@
     <div class="dropzone" id="dropzone">
       <span class="icon">📄</span>
       <p><strong>ลากไฟล์ PDF มาวางที่นี่</strong></p>
-      <p class="sub">หรือคลิกเพื่อเลือกไฟล์ — รองรับใบเสนอราคา (มีข้อความ ไม่ใช่ไฟล์สแกน)</p>
+      <p class="sub">หรือคลิกเพื่อเลือกไฟล์ — รองรับไฟล์ดิจิทัลและไฟล์สแกน (สแกนจะใช้ OCR อ่านให้)</p>
       <input type="file" id="fileInput" accept="application/pdf" multiple>
     </div>
 
@@ -457,8 +459,8 @@
     <button class="print-btn" id="copyTrackingBtn" style="background:#375a8c;color:#fff;margin-top:8px;">📋 คัดลอกแถวสำหรับวางลงชีตติดตามงาน</button>
     <div class="hint" id="copyTrackingHint" style="margin-top:6px;"></div>
 
-    <div class="fieldset" style="margin-top:14px;">
-      <h3>นำเข้าแบบหลายงานพร้อมกัน</h3>
+    <div class="fieldset" id="bulkSection" style="margin-top:14px;border:2px solid #375a8c;border-radius:8px;padding:10px;">
+      <h3>📥 นำเข้าแบบหลายงานพร้อมกัน (อัปโหลด Excel ที่นี่)</h3>
       <div class="hint">อัปโหลดไฟล์ Excel ที่รวมใบเปิดงานที่ทำเสร็จแล้วหลายงาน (1 ชีต = 1 งาน เช่นไฟล์ที่ดาวน์โหลดจากเครื่องมือนี้หลาย ๆ ใบมารวมกัน) ระบบจะอ่านทุกชีตแล้วสร้างแถวสำหรับวางลงชีตติดตามงานให้ครบทุกงานในครั้งเดียว</div>
       <input type="file" id="bulkFileInput" accept=".xlsx" style="margin-top:8px;">
       <div class="hint" id="bulkHint" style="margin-top:6px;"></div>
