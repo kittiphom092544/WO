@@ -350,7 +350,7 @@
   <h1>ใบเสนอราคา → ใบเปิดงาน</h1>
   <span>ลากไฟล์ PDF ใบเสนอราคา (TVT-xxxxxx) แล้วระบบจะกรอกฟอร์มให้อัตโนมัติ</span>
   <a href="#bulkSection" style="margin-left:auto;background:#375a8c;color:#fff;padding:5px 12px;border-radius:14px;font-size:12px;text-decoration:none;white-space:nowrap;">📥 นำเข้า Excel หลายงาน</a>
-  <span style="font-size:11px;opacity:.7;white-space:nowrap;">v25-09f (มีชีตสั่งซื้อ)</span>
+  <span style="font-size:11px;opacity:.7;white-space:nowrap;">v25-09h (รองรับรูปถ่าย+ปรับ OCR)</span>
 </div>
 
 <div class="layout">
@@ -359,9 +359,9 @@
   <div class="left">
     <div class="dropzone" id="dropzone">
       <span class="icon">📄</span>
-      <p><strong>ลากไฟล์ PDF มาวางที่นี่</strong></p>
-      <p class="sub">หรือคลิกเพื่อเลือกไฟล์ — รองรับไฟล์ดิจิทัลและไฟล์สแกน (สแกนจะใช้ OCR อ่านให้)</p>
-      <input type="file" id="fileInput" accept="application/pdf" multiple>
+      <p><strong>ลากไฟล์ PDF หรือรูปถ่ายมาวางที่นี่</strong></p>
+      <p class="sub">รองรับไฟล์ดิจิทัล / ไฟล์สแกน / รูปถ่ายเอกสาร (.pdf .jpg .png) — สแกน/รูปถ่ายจะใช้ OCR อ่านให้</p>
+      <input type="file" id="fileInput" accept="application/pdf,image/jpeg,image/png,image/webp" multiple>
     </div>
 
     <div id="bulkSection" style="margin-top:12px;">
@@ -645,7 +645,8 @@ async function ensureTesseract(){
 // เพราะในไฟล์มีแต่ "รูปภาพ" ของหน้ากระดาษ ไม่มีตัวอักษรจริงฝังอยู่)
 // OCR ทำงานช้ากว่าและแม่นยำน้อยกว่าไฟล์ดิจิทัลมาก โดยเฉพาะภาษาไทย —
 // ควรตรวจทานตัวเลข/รหัสวัสดุทุกแถวก่อนใช้งานจริง
-async function ocrPdf(pdf, onProgress){
+// สร้าง Tesseract worker ตัวเดียวใช้ร่วมกัน (ทั้งอ่าน PDF สแกนและรูปถ่ายโดยตรง)
+async function createOcrWorker(onProgress){
   await ensureTesseract();
   let worker;
   try{
@@ -664,26 +665,71 @@ async function ocrPdf(pdf, onProgress){
     console.error("Tesseract createWorker failed:", err);
     throw new Error("เปิดตัวอ่าน OCR ไม่สำเร็จ (โหลดไฟล์ตัวอ่านจาก jsDelivr ไม่ได้) — เช็คอินเทอร์เน็ต หรือลอง ad blocker/VPN ที่อาจบล็อก cdn.jsdelivr.net");
   }
+  // PSM 4 = "single column of text of variable sizes" — เหมาะกับฟอร์มเอกสารที่
+  // มีบล็อกข้อความห่าง ๆ กัน (หัวกระดาษ, ตาราง, ลายเซ็น) มากกว่าโหมดอัตโนมัติ
+  // เริ่มต้น (PSM 3) ซึ่งบางทีตัดแบ่งบล็อกข้อความผิด โดยเฉพาะหน้าที่มีที่ว่าง
+  // เยอะแล้วมีบรรทัดข้อมูลอยู่ไม่กี่บรรทัด (เจออาการนี้ตรง ๆ จากไฟล์ตัวอย่าง
+  // ที่รายละเอียดสินค้าออกมาเพี้ยนเหลือแค่ 2 ตัวอักษร ทั้งที่สแกนชัดมาก)
+  try{ await worker.setParameters({ tessedit_pageseg_mode: "4" }); } catch(e){ /* เวอร์ชันเก่าอาจไม่รองรับ ข้ามได้ */ }
+  return worker;
+}
+
+// OCR บนแคนวาสเดียว แล้วตัดเป็นบรรทัด
+async function ocrCanvas(worker, canvas){
+  const { data } = await worker.recognize(canvas);
+  const text = (data && data.text) || "";
+  return text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+}
+
+async function ocrPdf(pdf, onProgress){
+  const worker = await createOcrWorker(onProgress);
   let fullLines = [];
   try{
     for(let p=1;p<=pdf.numPages;p++){
       if(onProgress) onProgress(`กำลังอ่านหน้า ${p}/${pdf.numPages} ด้วย OCR`, 0);
       const page = await pdf.getPage(p);
       // สเกลสูงหน่อยเพื่อให้ตัวอักษรไทยเล็ก ๆ คมพอให้ OCR อ่านออก
-      const viewport = page.getViewport({scale: 2.5});
+      const viewport = page.getViewport({scale: 3});
       const canvas = document.createElement("canvas");
       canvas.width = viewport.width;
       canvas.height = viewport.height;
       const ctx = canvas.getContext("2d");
       await page.render({canvasContext: ctx, viewport}).promise;
-      const { data } = await worker.recognize(canvas);
-      const text = (data && data.text) || "";
-      text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean).forEach(l=>fullLines.push(l));
+      fullLines = fullLines.concat(await ocrCanvas(worker, canvas));
     }
   } finally {
     await worker.terminate();
   }
   return fullLines;
+}
+
+// อ่านรูปถ่ายเอกสาร (.jpg .png ฯลฯ) ตรง ๆ ด้วย OCR — ไม่ผ่าน pdf.js เลย
+// เพราะไฟล์รูปไม่มีแนวคิด "หน้า" หรือ "ชั้นข้อความ" แบบ PDF อยู่แล้ว
+async function ocrImageFile(file, onProgress){
+  const bitmap = await new Promise((resolve, reject)=>{
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("เปิดไฟล์รูปไม่สำเร็จ — ไฟล์อาจเสียหายหรือไม่ใช่รูปภาพ"));
+    img.src = URL.createObjectURL(file);
+  });
+  // รูปถ่ายด้วยมือถือมักเอียง/แสงไม่สม่ำเสมอ — สเกลให้ด้านยาวอย่างน้อย ~2200px
+  // เพื่อให้ตัวอักษรไทยเล็ก ๆ ยังพอมีรายละเอียดให้ OCR จับได้
+  const longSide = Math.max(bitmap.width, bitmap.height);
+  const scale = longSide < 2200 ? 2200/longSide : 1;
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  URL.revokeObjectURL(bitmap.src);
+
+  if(onProgress) onProgress("กำลังอ่านรูปภาพด้วย OCR", 0);
+  const worker = await createOcrWorker(onProgress);
+  try{
+    return await ocrCanvas(worker, canvas);
+  } finally {
+    await worker.terminate();
+  }
 }
 
 async function parsePdf(file, onProgress){
@@ -895,10 +941,14 @@ function applyMatcode(it, autofillPrice){
 // คำอธิบายที่ควรเป็นไทย/อังกฤษล้วน — ตัวอักษรกลุ่มนี้ไม่มีทางเกิดขึ้นเองตามธรรมชาติ
 function looksGarbled(desc){
   if(!desc) return false;
+  const trimmed = desc.trim();
   // Latin-1 Supplement + Latin Extended-A ranges ที่ไม่ใช่ปกติ (กันตัวสามัญ เช่น ° ผ่าน)
-  if(/[\u00C0-\u017F]/.test(desc)) return true;
+  if(/[\u00C0-\u017F]/.test(trimmed)) return true;
   // สระ/วรรณยุกต์ไทยที่ลอยเดี่ยว ๆ โดยไม่มีพยัญชนะไทยนำหน้าติดกัน (ตามด้วยช่องว่างหรือขึ้นต้นคำ)
-  if(/(^|\s)[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E]/.test(desc)) return true;
+  if(/(^|\s)[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E]/.test(trimmed)) return true;
+  // สั้นผิดปกติ (เช่น OCR อ่านได้แค่ "x ส" ทั้งที่ควรเป็นชื่อสินค้าเต็ม ๆ)
+  // รายละเอียดสินค้าในเอกสารกลุ่มนี้แทบไม่มีที่สั้นกว่านี้จริง ๆ เลย
+  if(trimmed.length <= 4) return true;
   return false;
 }
 
@@ -1328,6 +1378,10 @@ document.getElementById("copyTrackingBtn").addEventListener("click", async ()=>{
 // ชื่อเครื่องจักร(ช่องที่ผู้ใช้ใส่รหัสวัสดุ), รุ่น, รายละเอียด, จำนวน, หน่วย, หมายเหตุ,
 // ชื่อเครื่องจักร(ช่องฟ้า), วันที่สั่งซื้อ, ประเภท(หลัก), WO, วิธีการ...
 function cleanCell(v){ return String(v==null?"":v).replace(/[\t\r\n]+/g," ").trim(); }
+function todayFmt(){
+  const t = new Date();
+  return `${t.getDate()}/${t.getMonth()+1}/${t.getFullYear()}`;
+}
 
 function purchaseLine(o){
   const isSto = o.isSto !== false;
@@ -1346,7 +1400,7 @@ function purchaseLine(o){
     cleanCell(o.unit) || "PC",            // หน่วย
     "-",                                  // หมายเหตุ
     "",                                   // ชื่อเครื่องจักร (ช่องสีฟ้า)
-    o.jobDate || "",                      // วันที่สั่งซื้อ (ในชีตจริงงานล่าสุดตรงกับวันรับ Order)
+    todayFmt(),                           // วันที่สั่งซื้อ (วันที่กดคัดลอก ไม่ใช่วันที่ในใบเปิดงาน)
     "หลัก",                                // ประเภท
     o.wo || "",                           // WO
     "",                                   // วิธีการ...
@@ -1483,7 +1537,11 @@ function readSheetForTracking(sheet){
       continue;
     }
     if(typeof b === "number" && c && curGroup){
-      const d = sheet.cell(r, 4).value();
+      // เทมเพลตบางโรงงาน (รุ่นเก่ากว่า) เก็บรายละเอียดไว้คอลัมน์ D บางโรงงาน
+      // (รุ่นใหม่กว่า) เลื่อนไปคอลัมน์ E — เช็คทั้งคู่ เอาช่องที่มีข้อความจริง
+      const dCell = sheet.cell(r, 4).value();
+      const eCell = sheet.cell(r, 5).value();
+      const d = (dCell !== null && dCell !== undefined && dCell !== "") ? dCell : eCell;
       const h = sheet.cell(r, 8).value();
       const i = sheet.cell(r, 9).value();
       const j = sheet.cell(r, 10).value();
@@ -1677,10 +1735,24 @@ fileInput.addEventListener("change", e=>{
 // ของไฟล์ที่จับคู่โรงงานเดียวกันเข้าด้วยกัน (เหมือน STO หลายใบในไฟล์เดียว)
 // ถ้าไฟล์ครอบคลุมหลายโรงงาน จะแยกเป็นหลาย "ชุด" ให้สลับดู เพราะดาวน์โหลด
 // ออกมาต้องเป็นคนละไฟล์ Excel ต่อโรงงานอยู่ดี
+const IMAGE_TYPES = ["image/jpeg","image/png","image/webp"];
+function isSupportedFile(f){
+  return f.type === "application/pdf" || IMAGE_TYPES.includes(f.type);
+}
+// จุดเดียวที่ตัดสินว่าไฟล์ไหนเข้าทาง pdf.js (มีชั้นข้อความ/ต้องเช็คก่อน)
+// ไฟล์ไหนเป็นรูปถ่ายเอกสารเข้า OCR ตรง ๆ เลย
+async function readAnyFile(file, onProgress){
+  if(file.type === "application/pdf"){
+    return await parsePdf(file, onProgress);
+  }
+  const lines = await ocrImageFile(file, onProgress);
+  return { lines, usedOcr: true };
+}
+
 async function handleFiles(files){
-  const pdfFiles = files.filter(f => f.type === "application/pdf");
+  const pdfFiles = files.filter(isSupportedFile);
   if(pdfFiles.length === 0){
-    showStatus("ไม่มีไฟล์ PDF ในสิ่งที่เลือก กรุณาเลือกไฟล์ .pdf", "err");
+    showStatus("ไม่มีไฟล์ที่รองรับ กรุณาเลือกไฟล์ .pdf .jpg .png", "err");
     return;
   }
   if(pdfFiles.length === 1){
@@ -1692,7 +1764,7 @@ async function handleFiles(files){
   for(const file of pdfFiles){
     showStatus(`กำลังอ่าน [${file.name}] (${results.length+1}/${pdfFiles.length}) ...`, "warn");
     try{
-      const { lines, usedOcr } = await parsePdf(file, (msg, progress)=>{
+      const { lines, usedOcr } = await readAnyFile(file, (msg, progress)=>{
         const pct = progress ? ` (${Math.round(progress*100)}%)` : "";
         showStatus(`[${file.name}] ${msg}${pct}`, "warn");
       });
@@ -1799,18 +1871,18 @@ async function handleFile(file){
   state.batches = [];
   state.currentBatch = null;
   renderBatchSwitcher();
-  if(file.type !== "application/pdf"){
-    showStatus("ไฟล์นี้ไม่ใช่ PDF กรุณาเลือกไฟล์ .pdf", "err");
+  if(!isSupportedFile(file)){
+    showStatus("ไฟล์นี้ไม่รองรับ กรุณาเลือกไฟล์ .pdf .jpg .png", "err");
     return;
   }
-  showStatus("กำลังอ่านไฟล์ PDF ...", "warn");
+  showStatus(file.type === "application/pdf" ? "กำลังอ่านไฟล์ PDF ..." : "กำลังอ่านรูปภาพ ...", "warn");
   try{
-    const { lines, usedOcr } = await parsePdf(file, (msg, progress)=>{
+    const { lines, usedOcr } = await readAnyFile(file, (msg, progress)=>{
       const pct = progress ? ` (${Math.round(progress*100)}%)` : "";
-      showStatus(`${msg}${pct} — ไฟล์นี้เป็นภาพสแกน ใช้ OCR อ่านแทน อาจใช้เวลาสักครู่`, "warn");
+      showStatus(`${msg}${pct} — ใช้ OCR อ่านแทน อาจใช้เวลาสักครู่`, "warn");
     });
     if(lines.join("").trim().length === 0){
-      showStatus("อ่านข้อความจาก PDF นี้ไม่ได้เลย แม้จะลอง OCR แล้ว — ไฟล์อาจเบลอ/เอียงเกินไป กรุณาสแกนใหม่ให้คมชัดกว่านี้ หรือกรอกข้อมูลด้วยตนเองทางซ้าย (กล่อง \"วางข้อความเอง\")", "err");
+      showStatus("อ่านข้อความจากไฟล์นี้ไม่ได้เลย แม้จะลอง OCR แล้ว — ไฟล์อาจเบลอ/เอียงเกินไป กรุณาถ่าย/สแกนใหม่ให้คมชัดกว่านี้ หรือกรอกข้อมูลด้วยตนเองทางซ้าย (กล่อง \"วางข้อความเอง\")", "err");
       return;
     }
     const extracted = extractFromLines(lines);
